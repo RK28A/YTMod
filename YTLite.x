@@ -89,7 +89,7 @@ static void YTLStripPlayerAds(id playerData) {
 
 %hook YTReelDataSource
 - (void)setReels:(id)reels {
-    if (!ytlBool(@"noAds") || !reels) return %orig;
+    if ((!ytlBool(@"noAds") && !ytlBool(@"skipAdShorts")) || !reels) return %orig;
 
     NSIndexSet *(^adIndexes)(id) = ^NSIndexSet *(id collection) {
         NSMutableIndexSet *indexes = [NSMutableIndexSet indexSet];
@@ -121,7 +121,7 @@ static void YTLStripPlayerAds(id playerData) {
 }
 
 - (void)insertContentModel:(id)model atIndex:(NSUInteger)index {
-    if (ytlBool(@"noAds") && [YTLValue(model, @"isAdVideo") ?: YTLValue(model, @"adVideo") boolValue]) return;
+    if ((ytlBool(@"noAds") || ytlBool(@"skipAdShorts")) && [YTLValue(model, @"isAdVideo") ?: YTLValue(model, @"adVideo") boolValue]) return;
     %orig;
 }
 %end
@@ -137,35 +137,123 @@ static void YTLStripPlayerAds(id playerData) {
 - (UIColor *)generalBackgroundC { return ytlBool(@"oledMode") && self.pageStyle == 1 ? [UIColor blackColor] : %orig; }
 %end
 
-%hook YTIElementRenderer
-- (NSData *)elementData {
-    if (self.hasCompatibilityOptions && self.compatibilityOptions.hasAdLoggingData && ytlBool(@"noAds")) return nil;
+static NSUInteger ytlSettingsGeneration = 1;
+static const char kYTLElementDecisionKey;
 
-    NSString *description = [self description];
+static NSInteger YTLComputeElementDecision(YTIElementRenderer *renderer) {
+    BOOL noAds = ytlBool(@"noAds");
+    if (noAds && renderer.hasCompatibilityOptions && renderer.compatibilityOptions.hasAdLoggingData) return 2;
 
-    if (ytlBool(@"noAds")) {
+    BOOL hideShorts = YTLHideShorts(), hidePolls = ytlBool(@"filterPolls");
+    if (!noAds && !hideShorts && !hidePolls) return 0;
+
+    NSString *description = [renderer description];
+
+    if (noAds) {
         static NSArray *ads;
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
             ads = @[@"brand_promo", @"product_carousel", @"product_engagement_panel", @"product_item", @"text_search_ad", @"text_image_button_layout", @"carousel_headered_layout", @"carousel_footered_layout", @"square_image_layout", @"landscape_image_wide_button_layout", @"feed_ad_metadata", @"full_width_square_image_layout", @"full_width_portrait_image_layout", @"video_display_full_layout", @"video_display_full_buttoned_layout", @"video_display_button_group_layout", @"compact_promoted_item", @"in_feed_ad", @"ad_slot_renderer", @"shopping_carousel", @"shopping_item_card_list", @"statement_banner", @"masthead_ad", @"promoted_sparkles", @"_ad_with_", @"shorts_ad", @"reels_ad", @"player_overlay_ad", @"ads_info"];
         });
         for (NSString *ad in ads) {
-            if ([description containsString:ad]) return [NSData data];
+            if ([description containsString:ad]) return 1;
         }
     }
 
-    if (YTLIsPollDescription(description)) return nil;
+    if (YTLIsPollDescription(description)) return 2;
 
-    if (YTLHideShorts() && ![description containsString:@"history*"]) {
+    if (hideShorts && ![description containsString:@"history*"]) {
         for (NSString *shorts in @[@"shorts_shelf.eml", @"shorts_video_cell.eml", @"6Shorts"]) {
-            if ([description containsString:shorts]) return nil;
+            if ([description containsString:shorts]) return 2;
         }
     }
 
-    return %orig;
+    return 0;
+}
+
+static NSInteger YTLElementDecision(YTIElementRenderer *renderer) {
+    if (!renderer) return 0;
+    NSNumber *cached = objc_getAssociatedObject(renderer, &kYTLElementDecisionKey);
+    NSUInteger packed = cached.unsignedIntegerValue;
+    if (cached && (packed >> 2) == ytlSettingsGeneration) return packed & 3;
+
+    NSInteger decision = YTLComputeElementDecision(renderer);
+    objc_setAssociatedObject(renderer, &kYTLElementDecisionKey, @((ytlSettingsGeneration << 2) | decision), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return decision;
+}
+
+static BOOL YTLItemShouldHide(id item) {
+    if (!item) return NO;
+    for (NSString *key in @[@"elementRenderer", @"richItemRenderer.content.elementRenderer"]) {
+        id renderer = nil;
+        @try {
+            renderer = [item valueForKeyPath:key];
+        } @catch (NSException *exception) {
+            continue;
+        }
+        if ([renderer isKindOfClass:YTLClass(@"YTIElementRenderer")] && YTLElementDecision(renderer) != 0) return YES;
+    }
+    return NO;
+}
+
+static void YTLFilterSections(NSMutableArray *sections) {
+    if (![sections isKindOfClass:[NSMutableArray class]] || sections.count == 0) return;
+
+    NSMutableIndexSet *emptySections = [NSMutableIndexSet indexSet];
+    [sections enumerateObjectsUsingBlock:^(id section, NSUInteger idx, BOOL *stop) {
+        if (YTLItemShouldHide(section)) {
+            [emptySections addIndex:idx];
+            return;
+        }
+        id container = YTLValue(section, @"itemSectionRenderer");
+        NSMutableArray *contents = YTLValue(container, @"contentsArray");
+        if (![contents isKindOfClass:[NSMutableArray class]] || contents.count == 0) return;
+
+        NSIndexSet *hidden = [contents indexesOfObjectsPassingTest:^BOOL(id item, NSUInteger i, BOOL *s) {
+            return YTLItemShouldHide(item);
+        }];
+        if (hidden.count == 0) return;
+        [contents removeObjectsAtIndexes:hidden];
+        if (contents.count == 0) [emptySections addIndex:idx];
+    }];
+
+    if (emptySections.count) [sections removeObjectsAtIndexes:emptySections];
+}
+
+%hook YTIElementRenderer
+- (NSData *)elementData {
+    switch (YTLElementDecision(self)) {
+        case 1: return [NSData data];
+        case 2: return nil;
+        default: return %orig;
+    }
 }
 %end
 
+%hook YTInnerTubeCollectionViewController
+- (void)loadWithModel:(id)model {
+    @try {
+        YTLFilterSections(YTLValue(model, @"contentsArray"));
+    } @catch (NSException *exception) {}
+    %orig;
+}
+
+- (void)addSectionsFromArray:(NSArray *)sections {
+    if ([sections isKindOfClass:[NSArray class]] && sections.count) {
+        NSMutableArray *filtered = [sections mutableCopy];
+        @try {
+            YTLFilterSections(filtered);
+        } @catch (NSException *exception) {
+            filtered = [sections mutableCopy];
+        }
+        if (filtered.count != sections.count) {
+            %orig([sections isKindOfClass:[NSMutableArray class]] ? filtered : [filtered copy]);
+            return;
+        }
+    }
+    %orig;
+}
+%end
 %hook YTSectionListViewController
 - (void)loadWithModel:(YTISectionListRenderer *)model {
     if (ytlBool(@"noAds")) {
@@ -177,6 +265,10 @@ static void YTLStripPlayerAds(id playerData) {
         }];
         [contentsArray removeObjectsAtIndexes:removeIndexes];
     }
+
+    @try {
+        YTLFilterSections(model.contentsArray);
+    } @catch (NSException *exception) {}
 
     if (ytlBool(@"filterPolls") || YTLHideShorts()) {
         NSMutableArray *contentsArray = model.contentsArray;
@@ -955,6 +1047,23 @@ static BOOL findCell(ASNodeController *nodeController, NSArray <NSString *> *ide
 - (BOOL)shouldEnablePlayerBar { return ytlBool(@"shortsProgress") ? YES : %orig; }
 - (BOOL)shouldAlwaysEnablePlayerBar { return ytlBool(@"shortsProgress") ? YES : %orig; }
 - (BOOL)shouldEnablePlayerBarOnlyOnPause { return ytlBool(@"shortsProgress") ? NO : %orig; }
+
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    if (!ytlBool(@"skipAdShorts")) return;
+
+    id model = YTLValue(self, @"model") ?: YTLValue(self, @"contentModel");
+    if (![YTLValue(model, @"isAdVideo") boolValue]) return;
+
+    UIViewController *controller = (UIViewController *)self;
+    Class shortsClass = YTLClass(@"YTShortsPlayerViewController");
+    while (controller && ![controller isKindOfClass:shortsClass]) controller = controller.parentViewController;
+    if (![controller respondsToSelector:@selector(reelContentViewRequestsAdvanceToNextVideo:)]) return;
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [controller performSelector:@selector(reelContentViewRequestsAdvanceToNextVideo:) withObject:nil];
+    });
+}
 %end
 
 %hook YTReelPlayerViewControllerSub // legacy
@@ -1180,6 +1289,8 @@ static void genImageFromLayer(CALayer *layer, UIColor *backgroundColor, void (^c
 - (void)setFrame:(CGRect)frame {
     %orig;
 
+    if (!ytlBool(@"commentManager") && !ytlBool(@"postManager")) return;
+
     if (ytlBool(@"commentManager") && [YTLValue(self, @"_accessibilityIdentifier") isEqual:@"id.comment.content.label"]) {
         if ([self isKindOfClass:NSClassFromString(@"ASTextNode")]) {
             ASTextNode *textNode = (ASTextNode *)self;
@@ -1249,6 +1360,8 @@ static void genImageFromLayer(CALayer *layer, UIColor *backgroundColor, void (^c
 %hook _ASDisplayView
 - (void)setKeepalive_node:(id)arg1 {
     %orig;
+
+    if (!ytlBool(@"postManager") && !ytlBool(@"saveProfilePhoto") && !ytlBool(@"commentManager")) return;
 
     NSArray *gesturesInfo = @[
         @{@"selector": @"postManager:", @"text": @"id.ui.backstage.original_post", @"key": @(ytlBool(@"postManager"))},
@@ -1689,6 +1802,10 @@ static void YTLShowSafeModeAlert(void) {
 }
 
 %ctor {
+    [[NSNotificationCenter defaultCenter] addObserverForName:NSUserDefaultsDidChangeNotification object:[YTLUserDefaults standardUserDefaults] queue:nil usingBlock:^(NSNotification *note) {
+        ytlSettingsGeneration++;
+    }];
+
     if (YTLSafeModeActive()) {
         YTLShowSafeModeAlert();
         return;

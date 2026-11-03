@@ -25,7 +25,7 @@
 #import "Utils/YTLUserDefaults.h"
 #import "Utils/YTLSafeMode.h"
 
-#define ytlBool(key) [[YTLUserDefaults standardUserDefaults] boolForKey:key]
+#define ytlBool(key) [YTLUserDefaults cachedBoolForKey:key]
 
 typedef NS_ENUM(NSInteger, ShareEntityType) {
     ShareEntityFieldVideo = 1,

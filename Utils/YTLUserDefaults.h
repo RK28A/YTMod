@@ -10,6 +10,10 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (void)resetUserDefaults;
 
++ (BOOL)cachedBoolForKey:(NSString *)key;
+
++ (NSInteger)cachedIntegerForKey:(NSString *)key;
+
 @end
 
 NS_ASSUME_NONNULL_END

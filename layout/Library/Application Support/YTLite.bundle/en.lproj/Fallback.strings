@@ -106,3 +106,9 @@
 "FilterRefresh" = "Pull down to refresh the feed";
 "HomeFilterBar" = "Home filters";
 "HomeFilterBarDesc" = "Shows a collapsible filter menu at the top of the Home feed";
+"DeepBlack" = "Deep Black (OLED)";
+"DeepBlackDesc" = "Pure black backgrounds when the dark theme is used";
+"SkipAdShorts" = "Skip sponsored Shorts";
+"SkipAdShortsDesc" = "Removes promoted Shorts from the Shorts feed and skips any that still show up";
+"FilterShortsDesc" = "Hides Shorts shelves and Shorts videos in feeds";
+"FilterPollsDesc" = "Hides community polls in feeds";

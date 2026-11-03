@@ -10,8 +10,8 @@
 
 #define LOC(key) [NSBundle ytl_localizedStringForKey:key]
 
-#define ytlBool(key) [[YTLUserDefaults standardUserDefaults] boolForKey:key]
-#define ytlInt(key) [[YTLUserDefaults standardUserDefaults] integerForKey:key]
+#define ytlBool(key) [YTLUserDefaults cachedBoolForKey:key]
+#define ytlInt(key) [YTLUserDefaults cachedIntegerForKey:key]
 
 #define ytlSetBool(value, key) [[YTLUserDefaults standardUserDefaults] setBool:(value) forKey:(key)]
 #define ytlSetInt(value, key) [[YTLUserDefaults standardUserDefaults] setInteger:(value) forKey:(key)]

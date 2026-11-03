@@ -120,7 +120,53 @@ static NSString *GetCacheSize(YTSettingsViewController *settingsViewController) 
 }
 %end
 
+static const char kYTLThemeItemKey;
+
+static YTSettingsSectionItem *YTLDeepBlackItem(void) {
+    YTSettingsSectionItem *item = [YTLClass(@"YTSettingsSectionItem") switchItemWithTitle:LOC(@"DeepBlack")
+    titleDescription:LOC(@"DeepBlackDesc")
+    accessibilityIdentifier:@"YTLiteSectionItem"
+    switchOn:ytlBool(@"oledMode")
+    switchBlock:^BOOL(YTSettingsCell *cell, BOOL enabled) {
+        ytlSetBool(enabled, @"oledMode");
+        return YES;
+    }
+    settingItemId:0];
+    objc_setAssociatedObject(item, &kYTLThemeItemKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return item;
+}
+
+static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
+    if (category == YTLiteSection || ![items isKindOfClass:[NSArray class]]) return items;
+    NSUInteger themeIndex = NSNotFound;
+    for (NSUInteger i = 0; i < items.count; i++) {
+        id item = items[i];
+        if ([objc_getAssociatedObject(item, &kYTLThemeItemKey) isEqual:@YES]) return items;
+        if ([objc_getAssociatedObject(item, &kYTLThemeItemKey) isEqual:@NO]) themeIndex = i;
+    }
+    if (themeIndex == NSNotFound) return items;
+    NSMutableArray *copy = [items mutableCopy];
+    [copy insertObject:YTLDeepBlackItem() atIndex:themeIndex + 1];
+    return copy;
+}
+
+%hook YTSettingsViewController
+- (void)setSectionItems:(NSArray *)items forCategory:(NSUInteger)category title:(id)title icon:(id)icon titleDescription:(id)titleDescription headerHidden:(BOOL)headerHidden {
+    %orig(YTLInsertDeepBlack(items, category), category, title, icon, titleDescription, headerHidden);
+}
+
+- (void)setSectionItems:(NSArray *)items forCategory:(NSUInteger)category title:(id)title titleDescription:(id)titleDescription headerHidden:(BOOL)headerHidden {
+    %orig(YTLInsertDeepBlack(items, category), category, title, titleDescription, headerHidden);
+}
+%end
+
 %hook YTSettingsSectionItemManager
+- (id)appThemeSettingsSectionItem {
+    id item = %orig;
+    if (item) objc_setAssociatedObject(item, &kYTLThemeItemKey, @NO, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return item;
+}
+
 %new
 - (YTSettingsSectionItem *)switchWithTitle:(NSString *)title key:(NSString *)key {
     Class YTSettingsSectionItemClass = YTLClass(@"YTSettingsSectionItem");
@@ -204,11 +250,7 @@ static NSString *GetCacheSize(YTSettingsViewController *settingsViewController) 
         selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
             NSArray <YTSettingsSectionItem *> *rows = @[
             [self switchWithTitle:@"RemoveAds" key:@"noAds"],
-            [self switchWithTitle:@"BackgroundPlayback" key:@"backgroundPlayback"],
-            [self switchWithTitle:@"OLEDMode" key:@"oledMode"],
-            [self switchWithTitle:@"AutoClearCache" key:@"autoClearCache"],
-            [self switchWithTitle:@"DownloadButton" key:@"downloadButton"],
-            [self switchWithTitle:@"HomeFilterBar" key:@"homeFilterBar"]
+            [self switchWithTitle:@"BackgroundPlayback" key:@"backgroundPlayback"]
         ];
 
         YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:LOC(@"General") pickerSectionTitle:nil rows:[self availableRows:rows] selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];
@@ -217,6 +259,29 @@ static NSString *GetCacheSize(YTSettingsViewController *settingsViewController) 
     }];
 
     [sectionItems addObject:general];
+
+    YTSettingsSectionItem *modulation = [YTSettingsSectionItemClass itemWithTitle:@"YTModulation"
+        accessibilityIdentifier:@"YTLiteSectionItem"
+        detailTextBlock:^NSString *() {
+            return @"‣";
+        }
+        selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
+            NSArray <YTSettingsSectionItem *> *rows = @[
+                [self switchWithTitle:@"OLEDMode" key:@"oledMode"],
+                [self switchWithTitle:@"SkipAdShorts" key:@"skipAdShorts"],
+                [self switchWithTitle:@"HomeFilterBar" key:@"homeFilterBar"],
+                [self switchWithTitle:@"FilterShorts" key:@"filterShorts"],
+                [self switchWithTitle:@"FilterPolls" key:@"filterPolls"],
+                [self switchWithTitle:@"DownloadButton" key:@"downloadButton"],
+                [self switchWithTitle:@"AutoClearCache" key:@"autoClearCache"]
+            ];
+
+            YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:@"YTModulation" pickerSectionTitle:nil rows:[self availableRows:rows] selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];
+            [settingsViewController pushViewController:picker];
+            return YES;
+        }];
+
+    [sectionItems addObject:modulation];
 
     YTSettingsSectionItem *sponsorBlock = [YTSettingsSectionItemClass itemWithTitle:@"SponsorBlock"
         accessibilityIdentifier:@"YTLiteSectionItem"
@@ -650,8 +715,8 @@ static NSString *GetCacheSize(YTSettingsViewController *settingsViewController) 
     [sectionItems addObject:version];
 
     BOOL isNew = [settingsViewController respondsToSelector:@selector(setSectionItems:forCategory:title:icon:titleDescription:headerHidden:)];
-    isNew ? [settingsViewController setSectionItems:sectionItems forCategory:YTLiteSection title:@"YTLite" icon:nil titleDescription:nil headerHidden:NO]
-          : [settingsViewController setSectionItems:sectionItems forCategory:YTLiteSection title:@"YTLite" titleDescription:nil headerHidden:NO];
+    isNew ? [settingsViewController setSectionItems:sectionItems forCategory:YTLiteSection title:@"YTModulation" icon:nil titleDescription:nil headerHidden:NO]
+          : [settingsViewController setSectionItems:sectionItems forCategory:YTLiteSection title:@"YTModulation" titleDescription:nil headerHidden:NO];
 
 }
 

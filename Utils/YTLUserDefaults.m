@@ -1,5 +1,6 @@
 #import "YTLUserDefaults.h"
 #import <Security/Security.h>
+#import <os/lock.h>
 
 @implementation YTLUserDefaults
 
@@ -7,6 +8,8 @@ static NSString *const kDefaultsSuiteName = @"com.dvntm.ytlite";
 static NSString *const kBackupService = @"com.dvntm.ytlite.settings";
 static NSString *const kBackupAccount = @"backup";
 static BOOL backupPending = NO;
+static os_unfair_lock cacheLock = OS_UNFAIR_LOCK_INIT;
+static NSMutableDictionary <NSString *, NSNumber *> *valueCache;
 
 + (YTLUserDefaults *)standardUserDefaults {
     static dispatch_once_t onceToken;
@@ -25,6 +28,9 @@ static BOOL backupPending = NO;
 
 - (void)reset {
     [self removePersistentDomainForName:kDefaultsSuiteName];
+    os_unfair_lock_lock(&cacheLock);
+    [valueCache removeAllObjects];
+    os_unfair_lock_unlock(&cacheLock);
     [self deleteBackup];
 }
 
@@ -49,7 +55,8 @@ static BOOL backupPending = NO;
         @"sb_music_offtopic": @YES,
         @"sb_filler": @NO,
         @"downloadButton": @YES,
-        @"homeFilterBar": @YES
+        @"homeFilterBar": @YES,
+        @"skipAdShorts": @YES
     }];
 }
 
@@ -84,7 +91,36 @@ static BOOL backupPending = NO;
     [self setPersistentDomain:settings forName:kDefaultsSuiteName];
 }
 
++ (NSNumber *)cachedNumberForKey:(NSString *)key {
+    if (!key) return nil;
+    os_unfair_lock_lock(&cacheLock);
+    NSNumber *value = valueCache[key];
+    os_unfair_lock_unlock(&cacheLock);
+    if (value) return value;
+
+    id raw = [[self standardUserDefaults] objectForKey:key];
+    value = [raw isKindOfClass:[NSNumber class]] ? raw : @([raw boolValue]);
+
+    os_unfair_lock_lock(&cacheLock);
+    if (!valueCache) valueCache = [NSMutableDictionary dictionary];
+    valueCache[key] = value;
+    os_unfair_lock_unlock(&cacheLock);
+    return value;
+}
+
++ (BOOL)cachedBoolForKey:(NSString *)key {
+    return [[self cachedNumberForKey:key] boolValue];
+}
+
++ (NSInteger)cachedIntegerForKey:(NSString *)key {
+    return [[self cachedNumberForKey:key] integerValue];
+}
+
 - (void)defaultsDidChange:(NSNotification *)notification {
+    os_unfair_lock_lock(&cacheLock);
+    [valueCache removeAllObjects];
+    os_unfair_lock_unlock(&cacheLock);
+
     dispatch_async(dispatch_get_main_queue(), ^{
         backupPending = YES;
         [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(saveBackup) object:nil];
