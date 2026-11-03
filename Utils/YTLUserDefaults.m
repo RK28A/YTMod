@@ -46,6 +46,7 @@ static NSMutableDictionary <NSString *, NSNumber *> *valueCache;
         @"pivotIndex": @0,
         @"sponsorBlock": @YES,
         @"sbNotify": @YES,
+        @"sbMarkers": @YES,
         @"sb_sponsor": @YES,
         @"sb_selfpromo": @YES,
         @"sb_interaction": @YES,

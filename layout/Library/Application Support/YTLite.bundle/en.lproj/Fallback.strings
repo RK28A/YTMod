@@ -112,3 +112,5 @@
 "SkipAdShortsDesc" = "Removes promoted Shorts from the Shorts feed and skips any that still show up";
 "FilterShortsDesc" = "Hides Shorts shelves and Shorts videos in feeds";
 "FilterPollsDesc" = "Hides community polls in feeds";
+"SBMarkers" = "Show segments on the progress bar";
+"SBMarkersDesc" = "Colors sponsored and other segments on the video timeline";

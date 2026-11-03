@@ -292,6 +292,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             NSMutableArray <YTSettingsSectionItem *> *rows = [NSMutableArray arrayWithObjects:
                 [self switchWithTitle:@"SponsorBlock" key:@"sponsorBlock"],
                 [self switchWithTitle:@"SBNotify" key:@"sbNotify"],
+                [self switchWithTitle:@"SBMarkers" key:@"sbMarkers"],
                 nil];
             for (NSString *category in YTLSponsorBlockCategories()) {
                 [rows addObject:[self switchWithTitle:[@"SB_" stringByAppendingString:category] key:[@"sb_" stringByAppendingString:category]]];

@@ -112,3 +112,5 @@
 "SkipAdShortsDesc" = "Retire les Shorts de pub du fil Shorts et passe ceux qui apparaissent quand même";
 "FilterShortsDesc" = "Masque les étagères et vidéos Shorts dans les fils";
 "FilterPollsDesc" = "Masque les sondages de la communauté dans les fils";
+"SBMarkers" = "Afficher les passages sur la barre";
+"SBMarkersDesc" = "Colore les sponsors et autres passages sur la barre de lecture de la vidéo";
