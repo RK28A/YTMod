@@ -48,7 +48,8 @@ static BOOL backupPending = NO;
         @"sb_preview": @NO,
         @"sb_music_offtopic": @YES,
         @"sb_filler": @NO,
-        @"downloadButton": @YES
+        @"downloadButton": @YES,
+        @"homeFilterBar": @YES
     }];
 }
 

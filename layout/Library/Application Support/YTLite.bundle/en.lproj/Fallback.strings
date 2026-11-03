@@ -100,3 +100,9 @@
 "Cancel" = "Cancel";
 "SafeModeTitle" = "Safe mode";
 "SafeModeMessage" = "YouTube crashed several times in a row, so YTLite was turned off for this launch. Reset YTLite settings? The app will use them on the next launch.";
+"Filters" = "Filters";
+"FilterShorts" = "Hide Shorts";
+"FilterPolls" = "Hide polls";
+"FilterRefresh" = "Pull down to refresh the feed";
+"HomeFilterBar" = "Home filters";
+"HomeFilterBarDesc" = "Shows a collapsible filter menu at the top of the Home feed";

@@ -207,7 +207,8 @@ static NSString *GetCacheSize(YTSettingsViewController *settingsViewController) 
             [self switchWithTitle:@"BackgroundPlayback" key:@"backgroundPlayback"],
             [self switchWithTitle:@"OLEDMode" key:@"oledMode"],
             [self switchWithTitle:@"AutoClearCache" key:@"autoClearCache"],
-            [self switchWithTitle:@"DownloadButton" key:@"downloadButton"]
+            [self switchWithTitle:@"DownloadButton" key:@"downloadButton"],
+            [self switchWithTitle:@"HomeFilterBar" key:@"homeFilterBar"]
         ];
 
         YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:LOC(@"General") pickerSectionTitle:nil rows:[self availableRows:rows] selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];

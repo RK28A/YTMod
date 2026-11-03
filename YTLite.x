@@ -62,6 +62,15 @@ static UIImage *YTImageNamed(NSString *imageName) {
 - (void)decorateContext:(id)context { if (!ytlBool(@"noAds")) %orig; }
 %end
 
+static BOOL YTLHideShorts(void) {
+    return ytlBool(@"hideShorts") || ytlBool(@"filterShorts");
+}
+
+static BOOL YTLIsPollDescription(NSString *description) {
+    if (!ytlBool(@"filterPolls") || description.length == 0) return NO;
+    return [description rangeOfString:@"poll" options:NSCaseInsensitiveSearch].location != NSNotFound;
+}
+
 static void YTLStripPlayerAds(id playerData) {
     if (!playerData) return;
     for (NSString *key in @[@"playerAdsArray", @"adPlacementsArray", @"adSlotsArray"]) {
@@ -145,7 +154,9 @@ static void YTLStripPlayerAds(id playerData) {
         }
     }
 
-    if (ytlBool(@"hideShorts") && ![description containsString:@"history*"]) {
+    if (YTLIsPollDescription(description)) return nil;
+
+    if (YTLHideShorts() && ![description containsString:@"history*"]) {
         for (NSString *shorts in @[@"shorts_shelf.eml", @"shorts_video_cell.eml", @"6Shorts"]) {
             if ([description containsString:shorts]) return nil;
         }
@@ -165,7 +176,20 @@ static void YTLStripPlayerAds(id playerData) {
             return firstObject.hasPromotedVideoRenderer || firstObject.hasCompactPromotedVideoRenderer || firstObject.hasPromotedVideoInlineMutedRenderer;
         }];
         [contentsArray removeObjectsAtIndexes:removeIndexes];
-    } %orig;
+    }
+
+    if (ytlBool(@"filterPolls") || YTLHideShorts()) {
+        NSMutableArray *contentsArray = model.contentsArray;
+        NSIndexSet *removeIndexes = [contentsArray indexesOfObjectsPassingTest:^BOOL(YTISectionListSupportedRenderers *renderers, NSUInteger idx, BOOL *stop) {
+            id first = [renderers.itemSectionRenderer.contentsArray firstObject];
+            if (!first) return NO;
+            NSString *description = [first description];
+            if (YTLIsPollDescription(description) && ([description containsString:@"backstage"] || [description containsString:@"Backstage"])) return YES;
+            return YTLHideShorts() && ([description containsString:@"reel_shelf_renderer"] || [description containsString:@"reelShelfRenderer"]);
+        }];
+        if (removeIndexes.count) [contentsArray removeObjectsAtIndexes:removeIndexes];
+    }
+    %orig;
 }
 %end
 
@@ -898,11 +922,11 @@ static BOOL findCell(ASNodeController *nodeController, NSArray <NSString *> *ide
         _ASCollectionViewCell *asCell = (_ASCollectionViewCell *)cell;
         if ([asCell respondsToSelector:@selector(node)]) {
             NSString *idToRemove = [[asCell node] accessibilityIdentifier];
-            shouldRemove = [idToRemove isEqualToString:@"statement_banner.view"] ||
-                (([idToRemove isEqualToString:@"eml.shorts-grid"] || [idToRemove isEqualToString:@"eml.shorts-shelf"]) && ytlBool(@"hideShorts"));
+            shouldRemove = [idToRemove isEqualToString:@"statement_banner.view"] || YTLIsPollDescription(idToRemove) ||
+                (([idToRemove isEqualToString:@"eml.shorts-grid"] || [idToRemove isEqualToString:@"eml.shorts-shelf"]) && YTLHideShorts());
         }
     } else {
-        shouldRemove = ([cell isKindOfClass:objc_lookUpClass("YTReelShelfCell")] && ytlBool(@"hideShorts")) ||
+        shouldRemove = ([cell isKindOfClass:objc_lookUpClass("YTReelShelfCell")] && YTLHideShorts()) ||
             ([cell isKindOfClass:objc_lookUpClass("YTHorizontalCardListCell")] && ytlBool(@"noContinueWatching"));
     }
 

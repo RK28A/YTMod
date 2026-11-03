@@ -100,3 +100,9 @@
 "Cancel" = "Annuler";
 "SafeModeTitle" = "Mode sans échec";
 "SafeModeMessage" = "YouTube a planté plusieurs fois de suite, YTLite a donc été désactivé pour ce lancement. Réinitialiser les réglages YTLite ? Ils seront pris en compte au prochain lancement.";
+"Filters" = "Filtres";
+"FilterShorts" = "Masquer les Shorts";
+"FilterPolls" = "Masquer les sondages";
+"FilterRefresh" = "Tire vers le bas pour actualiser le fil";
+"HomeFilterBar" = "Filtres de l'accueil";
+"HomeFilterBarDesc" = "Affiche un menu de filtres repliable en haut du fil d'accueil";
