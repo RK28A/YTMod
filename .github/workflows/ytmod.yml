@@ -59,7 +59,7 @@ on:
 
       info_note:
         description: "TIP: Learn more about integrations in the README via the link below"
-        default: "https://github.com/RK28A/YTMod#this-fork"
+        default: "https://github.com/RK28A/YTMod"
         type: string
         required: false
 
