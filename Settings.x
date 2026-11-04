@@ -6,6 +6,7 @@
 
 static const NSInteger YTLiteSection = 789;
 FOUNDATION_EXPORT NSArray <NSString *> *YTLSponsorBlockCategories(void);
+FOUNDATION_EXPORT NSURL *YTLSiteURL(void);
 FOUNDATION_EXPORT NSInteger YTLSponsorBlockMode(NSString *category);
 FOUNDATION_EXPORT void YTLSetSponsorBlockMode(NSString *category, NSInteger mode);
 
@@ -386,6 +387,50 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         }];
 
     [sectionItems addObject:feedMenu];
+
+    YTSettingsSectionItem *siteMenu = [YTSettingsSectionItemClass itemWithTitle:LOC(@"WebsiteMenu")
+        accessibilityIdentifier:@"YTLiteSectionItem"
+        detailTextBlock:^NSString *() {
+            NSURL *url = YTLSiteURL();
+            return ytlBool(@"siteSwitch") ? (url.host ?: LOC(@"SiteURLNone")) : LOC(@"Disabled");
+        }
+        selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
+            NSArray <YTSettingsSectionItem *> *rows = @[
+                [self switchWithTitle:@"SiteSwitch" key:@"siteSwitch"],
+                [YTSettingsSectionItemClass itemWithTitle:LOC(@"SiteURL")
+                    titleDescription:LOC(@"SiteURLDesc")
+                    accessibilityIdentifier:@"YTLiteSectionItem"
+                    detailTextBlock:^NSString *() {
+                        NSURL *url = YTLSiteURL();
+                        return url.host ?: LOC(@"SiteURLNone");
+                    }
+                    selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
+                        UIAlertController *alert = [UIAlertController alertControllerWithTitle:LOC(@"SiteURL") message:nil preferredStyle:UIAlertControllerStyleAlert];
+                        [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+                            field.placeholder = @"example.com";
+                            field.text = [[YTLUserDefaults standardUserDefaults] stringForKey:@"siteURL"];
+                            field.keyboardType = UIKeyboardTypeURL;
+                            field.autocapitalizationType = UITextAutocapitalizationTypeNone;
+                            field.autocorrectionType = UITextAutocorrectionTypeNo;
+                            field.clearButtonMode = UITextFieldViewModeWhileEditing;
+                        }];
+                        [alert addAction:[UIAlertAction actionWithTitle:LOC(@"Cancel") style:UIAlertActionStyleCancel handler:nil]];
+                        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                            NSString *value = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                            [[YTLUserDefaults standardUserDefaults] setObject:value ?: @"" forKey:@"siteURL"];
+                            [settingsViewController reloadData];
+                        }]];
+                        [[YTLClass(@"YTUIUtils") topViewControllerForPresenting] presentViewController:alert animated:YES completion:nil];
+                        return YES;
+                    }]
+            ];
+
+            YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:LOC(@"WebsiteMenu") pickerSectionTitle:nil rows:rows selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];
+            [settingsViewController pushViewController:picker];
+            return YES;
+        }];
+
+    [sectionItems addObject:siteMenu];
 
     YTSettingsSectionItem *themeMenu = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Theme")
         accessibilityIdentifier:@"YTLiteSectionItem"

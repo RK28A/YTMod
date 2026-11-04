@@ -125,3 +125,11 @@
 "Theme" = "Thème";
 "DownloadsMenu" = "Téléchargements & copie";
 "OLEDRestart" = "Redémarre l'app pour l'appliquer partout";
+"WebsiteMenu" = "Site web";
+"SiteSwitch" = "Basculer vers un site";
+"SiteSwitchDesc" = "Tape le logo YouTube puis l'icône du site pour ouvrir ton site dans l'app";
+"SiteURL" = "Adresse du site";
+"SiteURLDesc" = "Le site ouvert par le logo";
+"SiteURLNone" = "Non défini";
+"SiteBackToYouTube" = "Retourner sur YouTube";
+"SiteHome" = "Accueil du site";

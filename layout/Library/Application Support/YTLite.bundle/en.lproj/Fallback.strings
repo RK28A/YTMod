@@ -125,3 +125,11 @@
 "Theme" = "Theme";
 "DownloadsMenu" = "Downloads & copy";
 "OLEDRestart" = "Restart the app to apply everywhere";
+"WebsiteMenu" = "Website";
+"SiteSwitch" = "Website switch";
+"SiteSwitchDesc" = "Tap the YouTube logo, then the website icon, to open your website inside the app";
+"SiteURL" = "Website address";
+"SiteURLDesc" = "The website opened by the logo switch";
+"SiteURLNone" = "Not set";
+"SiteBackToYouTube" = "Back to YouTube";
+"SiteHome" = "Website home";
