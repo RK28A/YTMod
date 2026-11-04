@@ -1,161 +1,112 @@
 #import "YTLite.h"
 #import "Utils/YTLSafeMode.h"
 
-static const NSInteger kHomeFilterTag = 7741;
+static const char kFilterButtonKey;
 
-@interface YTBrowseViewController : UIViewController
-- (id)browseIdentifier;
+@interface YTRightNavigationButtons (YTModulation)
+- (YTQTMButton *)ytl_filterButton;
 @end
 
-@interface YTLHomeFilterBar : UIView
-@property (nonatomic, strong) UIButton *toggleButton;
-@property (nonatomic, strong) UIStackView *panel;
-@property (nonatomic, weak) UIResponder *responder;
+static UIImage *YTLFilterIcon(void) {
+    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightRegular];
+    BOOL active = ytlBool(@"filterShorts") || ytlBool(@"filterPolls");
+    return [UIImage systemImageNamed:active ? @"line.3.horizontal.decrease.circle.fill" : @"line.3.horizontal.decrease.circle" withConfiguration:config];
+}
+
+static void YTLPresentFilterMenu(UIView *source) {
+    UIViewController *presenter = [YTLClass(@"YTUIUtils") topViewControllerForPresenting];
+    YTDefaultSheetController *sheet = [YTLClass(@"YTDefaultSheetController") sheetControllerWithParentResponder:nil];
+    if (!sheet || !presenter) return;
+
+    NSArray <NSArray <NSString *> *> *filters = @[@[@"filterShorts", @"FilterShorts"], @[@"filterPolls", @"FilterPolls"]];
+    for (NSArray <NSString *> *filter in filters) {
+        NSString *key = filter[0];
+        NSString *title = [NSString stringWithFormat:@"%@  %@", ytlBool(key) ? @"✓" : @"○", LOC(filter[1])];
+        [sheet addAction:[YTLClass(@"YTActionSheetAction") actionWithTitle:title iconImage:nil style:0 handler:^{
+            ytlSetBool(!ytlBool(key), key);
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"YTLFilterChanged" object:nil];
+            [[YTLClass(@"YTToastResponderEvent") eventWithMessage:LOC(@"FilterRefresh") firstResponder:presenter] send];
+        }]];
+    }
+
+    [sheet presentFromViewController:presenter animated:YES completion:nil];
+}
+
+@interface YTLFilterTarget : NSObject
++ (instancetype)shared;
 @end
 
-@implementation YTLHomeFilterBar
-
-- (instancetype)init {
-    self = [super initWithFrame:CGRectZero];
-    if (!self) return nil;
-
-    self.tag = kHomeFilterTag;
-    self.translatesAutoresizingMaskIntoConstraints = NO;
-    self.layer.cornerRadius = 14;
-    self.layer.masksToBounds = YES;
-
-    UIVisualEffectView *blur = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterial]];
-    blur.translatesAutoresizingMaskIntoConstraints = NO;
-    [self addSubview:blur];
-
-    _toggleButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    _toggleButton.translatesAutoresizingMaskIntoConstraints = NO;
-    _toggleButton.tintColor = [UIColor labelColor];
-    _toggleButton.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
-    [_toggleButton addTarget:self action:@selector(toggle) forControlEvents:UIControlEventTouchUpInside];
-
-    _panel = [[UIStackView alloc] initWithArrangedSubviews:@[
-        [self rowWithTitle:LOC(@"FilterShorts") key:@"filterShorts"],
-        [self rowWithTitle:LOC(@"FilterPolls") key:@"filterPolls"]
-    ]];
-    _panel.axis = UILayoutConstraintAxisVertical;
-    _panel.spacing = 6;
-    _panel.translatesAutoresizingMaskIntoConstraints = NO;
-    _panel.hidden = YES;
-
-    UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[_toggleButton, _panel]];
-    content.axis = UILayoutConstraintAxisVertical;
-    content.spacing = 6;
-    content.alignment = UIStackViewAlignmentFill;
-    content.translatesAutoresizingMaskIntoConstraints = NO;
-    [self addSubview:content];
-
-    [NSLayoutConstraint activateConstraints:@[
-        [blur.topAnchor constraintEqualToAnchor:self.topAnchor],
-        [blur.bottomAnchor constraintEqualToAnchor:self.bottomAnchor],
-        [blur.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
-        [blur.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
-        [content.topAnchor constraintEqualToAnchor:self.topAnchor constant:4],
-        [content.bottomAnchor constraintEqualToAnchor:self.bottomAnchor constant:-4],
-        [content.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:12],
-        [content.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-12],
-        [_toggleButton.heightAnchor constraintEqualToConstant:28]
-    ]];
-
-    [self updateTitle];
-    return self;
+@implementation YTLFilterTarget
++ (instancetype)shared {
+    static YTLFilterTarget *target;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ target = [YTLFilterTarget new]; });
+    return target;
 }
 
-- (UIView *)rowWithTitle:(NSString *)title key:(NSString *)key {
-    UILabel *label = [UILabel new];
-    label.text = title;
-    label.font = [UIFont systemFontOfSize:14];
-    label.textColor = [UIColor labelColor];
+- (void)tapped:(UIButton *)sender {
+    YTLPresentFilterMenu(sender);
+}
+@end
 
-    UISwitch *toggle = [UISwitch new];
-    toggle.on = ytlBool(key);
-    toggle.onTintColor = [UIColor colorWithRed:0.75 green:0.50 blue:0.90 alpha:1.0];
-    toggle.accessibilityIdentifier = key;
-    [toggle addTarget:self action:@selector(switchChanged:) forControlEvents:UIControlEventValueChanged];
-
-    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[label, toggle]];
-    row.axis = UILayoutConstraintAxisHorizontal;
-    row.spacing = 12;
-    row.alignment = UIStackViewAlignmentCenter;
-    return row;
+static NSArray *YTLWithFilterButton(YTRightNavigationButtons *container, NSArray *buttons) {
+    if (!ytlBool(@"homeFilterBar") || ![buttons isKindOfClass:[NSArray class]]) return buttons;
+    YTQTMButton *button = [container ytl_filterButton];
+    if (!button || [buttons containsObject:button]) return buttons;
+    NSMutableArray *result = [buttons mutableCopy];
+    [result insertObject:button atIndex:0];
+    return result;
 }
 
-- (NSUInteger)activeCount {
-    return (ytlBool(@"filterShorts") ? 1 : 0) + (ytlBool(@"filterPolls") ? 1 : 0);
-}
+%hook YTRightNavigationButtons
+%new
+- (YTQTMButton *)ytl_filterButton {
+    YTQTMButton *button = objc_getAssociatedObject(self, &kFilterButtonKey);
+    if (button) return button;
 
-- (void)updateTitle {
-    NSUInteger count = [self activeCount];
-    NSString *arrow = self.panel.hidden ? @"▾" : @"▴";
-    NSString *title = count ? [NSString stringWithFormat:@"%@ (%lu) %@", LOC(@"Filters"), (unsigned long)count, arrow] : [NSString stringWithFormat:@"%@ %@", LOC(@"Filters"), arrow];
-    [self.toggleButton setTitle:title forState:UIControlStateNormal];
-}
+    button = [YTLClass(@"YTQTMButton") iconButton];
+    if (!button) return nil;
+    button.accessibilityLabel = LOC(@"Filters");
+    button.accessibilityIdentifier = @"id.ytmodulation.filter.button";
+    if ([button respondsToSelector:@selector(enableNewTouchFeedback)]) [button enableNewTouchFeedback];
+    [button setImage:YTLFilterIcon() forState:UIControlStateNormal];
+    [button addTarget:[YTLFilterTarget shared] action:@selector(tapped:) forControlEvents:UIControlEventTouchUpInside];
+    objc_setAssociatedObject(self, &kFilterButtonKey, button, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
-- (void)toggle {
-    [UIView animateWithDuration:0.2 animations:^{
-        self.panel.hidden = !self.panel.hidden;
-        [self.superview layoutIfNeeded];
+    __weak YTQTMButton *weakButton = button;
+    [[NSNotificationCenter defaultCenter] addObserverForName:@"YTLFilterChanged" object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+        [weakButton setImage:YTLFilterIcon() forState:UIControlStateNormal];
     }];
-    [self updateTitle];
+    return button;
 }
 
-- (void)switchChanged:(UISwitch *)sender {
-    ytlSetBool(sender.on, sender.accessibilityIdentifier);
-    [self updateTitle];
-    [[YTLClass(@"YTToastResponderEvent") eventWithMessage:LOC(@"FilterRefresh") firstResponder:self.responder ?: [YTLClass(@"YTUIUtils") topViewControllerForPresenting]] send];
+- (NSArray *)buttons {
+    return YTLWithFilterButton(self, %orig);
 }
 
-- (void)collapse {
-    if (self.panel.hidden) return;
-    self.panel.hidden = YES;
-    [self updateTitle];
+- (NSArray *)visibleButtons {
+    return YTLWithFilterButton(self, %orig);
 }
 
-@end
-
-static BOOL YTLIsHomeBrowse(YTBrowseViewController *controller) {
-    id identifier = [controller respondsToSelector:@selector(browseIdentifier)] ? [controller browseIdentifier] : nil;
-    NSString *string = [identifier isKindOfClass:[NSString class]] ? identifier : [identifier description];
-    if (!string.length) {
-        id endpoint = YTLValue(YTLValue(controller, @"navigationEndpoint"), @"browseEndpoint");
-        string = YTLValue(endpoint, @"browseId");
+- (void)layoutSubviews {
+    YTQTMButton *button = ytlBool(@"homeFilterBar") ? [self ytl_filterButton] : objc_getAssociatedObject(self, &kFilterButtonKey);
+    if (ytlBool(@"homeFilterBar")) {
+        if (button && button.superview != self) [self addSubview:button];
+        button.hidden = NO;
+    } else {
+        button.hidden = YES;
     }
-    return [string isKindOfClass:[NSString class]] && [string containsString:@"FEwhat_to_watch"];
-}
 
-%hook YTBrowseViewController
-- (void)viewDidAppear:(BOOL)animated {
     %orig;
 
-    YTLHomeFilterBar *bar = (YTLHomeFilterBar *)[self.view viewWithTag:kHomeFilterTag];
-    if (!ytlBool(@"homeFilterBar") || !YTLIsHomeBrowse(self)) {
-        [bar removeFromSuperview];
-        return;
+    if (!button || button.hidden) return;
+    UIView *reference = self.notificationButton.superview == self && !self.notificationButton.hidden ? self.notificationButton : self.searchButton;
+    if (CGRectIsEmpty(button.frame) && reference && !CGRectIsEmpty(reference.frame)) {
+        CGRect frame = reference.frame;
+        frame.origin.x = CGRectGetMinX(reference.frame) - CGRectGetWidth(frame);
+        button.frame = frame;
     }
-
-    if (bar) {
-        [self.view bringSubviewToFront:bar];
-        return;
-    }
-
-    bar = [YTLHomeFilterBar new];
-    bar.responder = self;
-    [self.view addSubview:bar];
-    [NSLayoutConstraint activateConstraints:@[
-        [bar.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:6],
-        [bar.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-12]
-    ]];
-}
-
-- (void)viewWillDisappear:(BOOL)animated {
-    %orig;
-    YTLHomeFilterBar *bar = (YTLHomeFilterBar *)[self.view viewWithTag:kHomeFilterTag];
-    if ([bar isKindOfClass:[YTLHomeFilterBar class]]) [bar collapse];
+    button.tintColor = reference.tintColor ?: [UIColor labelColor];
 }
 %end
 

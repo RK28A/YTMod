@@ -87,7 +87,33 @@ static void YTLStripPlayerAds(id playerData) {
 }
 %end
 
+static BOOL YTLHasFlag(id object, SEL selector) {
+    return [object respondsToSelector:selector] && ((BOOL (*)(id, SEL))objc_msgSend)(object, selector);
+}
+
+static BOOL YTLReelIsAd(id model) {
+    if (!model) return NO;
+    if ([YTLValue(model, @"isAdVideo") boolValue] || [YTLValue(model, @"adVideo") boolValue]) return YES;
+    id videoType = YTLValue(model, @"videoType");
+    if (videoType && [videoType integerValue] == 3) return YES;
+    id endpoint = YTLValue(model, @"endpoint");
+    id reelEndpoint = YTLHasFlag(endpoint, @selector(hasReelWatchEndpoint)) ? YTLValue(endpoint, @"reelWatchEndpoint") : nil;
+    return YTLHasFlag(reelEndpoint, @selector(hasAdClientParams));
+}
+
+static BOOL YTLEndpointIsAd(id endpoint) {
+    if (!endpoint) return NO;
+    id reelEndpoint = YTLHasFlag(endpoint, @selector(hasReelWatchEndpoint)) ? YTLValue(endpoint, @"reelWatchEndpoint") : nil;
+    if (YTLHasFlag(reelEndpoint, @selector(hasAdClientParams))) return YES;
+    return YTLHasFlag(endpoint, @selector(hasReelNonVideoAdRenderer));
+}
+
 %hook YTReelDataSource
+- (void)insertEndpoint:(id)endpoint atIndex:(NSUInteger)index {
+    if ((ytlBool(@"noAds") || ytlBool(@"skipAdShorts")) && YTLEndpointIsAd(endpoint)) return;
+    %orig;
+}
+
 - (void)setReels:(id)reels {
     if ((!ytlBool(@"noAds") && !ytlBool(@"skipAdShorts")) || !reels) return %orig;
 
@@ -95,7 +121,7 @@ static void YTLStripPlayerAds(id playerData) {
         NSMutableIndexSet *indexes = [NSMutableIndexSet indexSet];
         NSUInteger i = 0;
         for (id model in collection) {
-            if (YTLValue(model, @"isAdVideo") ? [YTLValue(model, @"isAdVideo") boolValue] : [YTLValue(model, @"adVideo") boolValue]) [indexes addIndex:i];
+            if (YTLReelIsAd(model)) [indexes addIndex:i];
             i++;
         }
         return indexes;
@@ -121,7 +147,7 @@ static void YTLStripPlayerAds(id playerData) {
 }
 
 - (void)insertContentModel:(id)model atIndex:(NSUInteger)index {
-    if ((ytlBool(@"noAds") || ytlBool(@"skipAdShorts")) && [YTLValue(model, @"isAdVideo") ?: YTLValue(model, @"adVideo") boolValue]) return;
+    if ((ytlBool(@"noAds") || ytlBool(@"skipAdShorts")) && YTLReelIsAd(model)) return;
     %orig;
 }
 %end
@@ -132,9 +158,6 @@ static void YTLStripPlayerAds(id playerData) {
 - (UIColor *)background1 { return ytlBool(@"oledMode") && self.pageStyle == 1 ? [UIColor blackColor] : %orig; }
 - (UIColor *)background2 { return ytlBool(@"oledMode") && self.pageStyle == 1 ? [UIColor blackColor] : %orig; }
 - (UIColor *)background3 { return ytlBool(@"oledMode") && self.pageStyle == 1 ? [UIColor blackColor] : %orig; }
-- (UIColor *)generalBackgroundA { return ytlBool(@"oledMode") && self.pageStyle == 1 ? [UIColor blackColor] : %orig; }
-- (UIColor *)generalBackgroundB { return ytlBool(@"oledMode") && self.pageStyle == 1 ? [UIColor blackColor] : %orig; }
-- (UIColor *)generalBackgroundC { return ytlBool(@"oledMode") && self.pageStyle == 1 ? [UIColor blackColor] : %orig; }
 %end
 
 static NSUInteger ytlSettingsGeneration = 1;
@@ -180,10 +203,6 @@ static NSInteger YTLElementDecision(YTIElementRenderer *renderer) {
     NSInteger decision = YTLComputeElementDecision(renderer);
     objc_setAssociatedObject(renderer, &kYTLElementDecisionKey, @((ytlSettingsGeneration << 2) | decision), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     return decision;
-}
-
-static BOOL YTLHasFlag(id object, SEL selector) {
-    return [object respondsToSelector:selector] && ((BOOL (*)(id, SEL))objc_msgSend)(object, selector);
 }
 
 static BOOL YTLItemIsAd(id item) {
@@ -1074,7 +1093,7 @@ static BOOL YTLNodeIdentifierShouldHide(NSString *identifier) {
     if (!ytlBool(@"skipAdShorts")) return;
 
     id model = YTLValue(self, @"model") ?: YTLValue(self, @"contentModel");
-    if (![YTLValue(model, @"isAdVideo") boolValue]) return;
+    if (!YTLReelIsAd(model)) return;
 
     UIViewController *controller = (UIViewController *)self;
     Class shortsClass = YTLClass(@"YTShortsPlayerViewController");

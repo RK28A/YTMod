@@ -94,12 +94,46 @@ static NSString *GetCacheSize(YTSettingsViewController *settingsViewController) 
 }
 
 // Settings
+@interface YTSettingsGroupData : NSObject
+@end
+
+@interface NSObject (YTModulationTweaks)
++ (NSMutableArray <NSNumber *> *)tweaks;
+@end
+
+static BOOL YTLHasTweaksGroup(void) {
+    Class groupClass = objc_getClass("YTSettingsGroupData");
+    return groupClass && class_getClassMethod(groupClass, @selector(tweaks)) != NULL;
+}
+
+static void YTLRegisterInTweaksGroup(void) {
+    if (!YTLHasTweaksGroup()) return;
+    NSMutableArray *tweaks = [(id)objc_getClass("YTSettingsGroupData") tweaks];
+    if ([tweaks isKindOfClass:[NSMutableArray class]] && ![tweaks containsObject:@(YTLiteSection)]) [tweaks insertObject:@(YTLiteSection) atIndex:0];
+}
+
+%hook YTSettingsGroupData
+- (NSArray *)orderedCategories {
+    YTLRegisterInTweaksGroup();
+    NSArray *categories = %orig;
+    if (YTLHasTweaksGroup() || [YTLValue(self, @"type") unsignedIntegerValue] != 1 || [categories containsObject:@(YTLiteSection)]) return categories;
+    NSMutableArray *mutableCategories = [categories mutableCopy] ?: [NSMutableArray array];
+    [mutableCategories insertObject:@(YTLiteSection) atIndex:0];
+    return mutableCategories;
+}
+
+- (NSArray *)orderedCategoriesForGroupType:(NSUInteger)type {
+    YTLRegisterInTweaksGroup();
+    return %orig;
+}
+%end
+
 %hook YTAppSettingsPresentationData
 + (NSArray *)settingsCategoryOrder {
     NSArray *order = %orig;
     NSMutableArray *mutableOrder = [order mutableCopy];
     NSUInteger insertIndex = [order indexOfObject:@(1)];
-    if (insertIndex != NSNotFound)
+    if (insertIndex != NSNotFound && ![order containsObject:@(YTLiteSection)])
         [mutableOrder insertObject:@(YTLiteSection) atIndex:insertIndex + 1];
     return mutableOrder;
 }
@@ -757,7 +791,9 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
     [sectionItems addObject:version];
 
     BOOL isNew = [settingsViewController respondsToSelector:@selector(setSectionItems:forCategory:title:icon:titleDescription:headerHidden:)];
-    isNew ? [settingsViewController setSectionItems:sectionItems forCategory:YTLiteSection title:@"YTModulation" icon:nil titleDescription:nil headerHidden:NO]
+    YTIIcon *icon = [YTLClass(@"YTIIcon") new];
+    if ([icon respondsToSelector:@selector(setIconType:)]) icon.iconType = 44;
+    isNew ? [settingsViewController setSectionItems:sectionItems forCategory:YTLiteSection title:@"YTModulation" icon:icon titleDescription:nil headerHidden:NO]
           : [settingsViewController setSectionItems:sectionItems forCategory:YTLiteSection title:@"YTModulation" titleDescription:nil headerHidden:NO];
 
 }

@@ -104,8 +104,8 @@
 "FilterShorts" = "Masquer les Shorts";
 "FilterPolls" = "Masquer les sondages";
 "FilterRefresh" = "Tire vers le bas pour actualiser le fil";
-"HomeFilterBar" = "Filtres de l'accueil";
-"HomeFilterBarDesc" = "Affiche un menu de filtres repliable en haut du fil d'accueil";
+"HomeFilterBar" = "Bouton de filtres";
+"HomeFilterBarDesc" = "Ajoute un bouton de filtres à côté de la cloche des notifications";
 "DeepBlack" = "Noir profond (OLED)";
 "DeepBlackDesc" = "Fonds noirs purs quand le thème sombre est utilisé";
 "SkipAdShorts" = "Sauter les Shorts sponsorisés";

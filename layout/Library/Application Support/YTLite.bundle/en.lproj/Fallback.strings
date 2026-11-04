@@ -104,8 +104,8 @@
 "FilterShorts" = "Hide Shorts";
 "FilterPolls" = "Hide polls";
 "FilterRefresh" = "Pull down to refresh the feed";
-"HomeFilterBar" = "Home filters";
-"HomeFilterBarDesc" = "Shows a collapsible filter menu at the top of the Home feed";
+"HomeFilterBar" = "Filter button";
+"HomeFilterBarDesc" = "Adds a filter button next to the notifications bell";
 "DeepBlack" = "Deep Black (OLED)";
 "DeepBlackDesc" = "Pure black backgrounds when the dark theme is used";
 "SkipAdShorts" = "Skip sponsored Shorts";
