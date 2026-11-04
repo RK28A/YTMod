@@ -244,16 +244,13 @@ static BOOL YTLItemShouldHide(id item) {
     if (!item) return NO;
     if (ytlBool(@"noAds") && YTLItemIsAd(item)) return YES;
     if (YTLHideShorts() && (YTLHasFlag(item, @selector(hasReelItemRenderer)) || YTLHasFlag(item, @selector(hasReelGridRenderer)) || YTLHasFlag(item, @selector(hasReelShelfRenderer)))) return YES;
-    for (NSString *key in @[@"elementRenderer", @"richItemRenderer.content.elementRenderer"]) {
-        id renderer = nil;
-        @try {
-            renderer = [item valueForKeyPath:key];
-        } @catch (NSException *exception) {
-            continue;
-        }
-        if ([renderer isKindOfClass:YTLClass(@"YTIElementRenderer")] && YTLElementDecision(renderer) != 0) return YES;
+    Class rendererClass = YTLClass(@"YTIElementRenderer");
+    id renderer = YTLHasFlag(item, @selector(hasElementRenderer)) ? YTLValue(item, @"elementRenderer") : nil;
+    if (!renderer && YTLHasFlag(item, @selector(hasRichItemRenderer))) {
+        id content = YTLValue(YTLValue(item, @"richItemRenderer"), @"content");
+        if (YTLHasFlag(content, @selector(hasElementRenderer))) renderer = YTLValue(content, @"elementRenderer");
     }
-    return NO;
+    return [renderer isKindOfClass:rendererClass] && YTLElementDecision(renderer) != 0;
 }
 
 static void YTLFilterSections(NSMutableArray *sections) {
@@ -1029,11 +1026,20 @@ static BOOL YTLNodeIdentifierShouldHide(NSString *identifier) {
     return NO;
 }
 
+static const char kYTLModelHideKey;
+
 static BOOL YTLElementModelShouldHide(ASCollectionElement *element) {
-    id model = YTLValue(element, @"nodeModel");
-    if (!model) return NO;
-    if ([model isKindOfClass:YTLClass(@"YTIElementRenderer")]) return YTLElementDecision(model) != 0;
-    return YTLItemShouldHide(model);
+    if (![element respondsToSelector:@selector(nodeModel)]) return NO;
+    id model = ((id (*)(id, SEL))objc_msgSend)(element, @selector(nodeModel));
+    if (!model || ![model isKindOfClass:YTLClass(@"GPBMessage")]) return NO;
+
+    NSNumber *cached = objc_getAssociatedObject(model, &kYTLModelHideKey);
+    NSUInteger packed = cached.unsignedIntegerValue;
+    if (cached && (packed >> 1) == ytlSettingsGeneration) return packed & 1;
+
+    BOOL hide = [model isKindOfClass:YTLClass(@"YTIElementRenderer")] ? YTLElementDecision(model) != 0 : YTLItemShouldHide(model);
+    objc_setAssociatedObject(model, &kYTLModelHideKey, @((ytlSettingsGeneration << 1) | (hide ? 1 : 0)), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return hide;
 }
 
 %hook ASCollectionView

@@ -25,8 +25,18 @@ static inline Class YTLClass(NSString *name) {
     return nil;
 }
 
+static inline BOOL YTLCanReadKey(id object, NSString *key) {
+    if ([key hasPrefix:@"_"]) {
+        for (Class cls = object_getClass(object); cls; cls = class_getSuperclass(cls)) {
+            if (class_getInstanceVariable(cls, key.UTF8String)) return YES;
+        }
+        return NO;
+    }
+    return [object respondsToSelector:NSSelectorFromString(key)];
+}
+
 static inline id YTLValue(id object, NSString *key) {
-    if (!object || !key) return nil;
+    if (!object || !key || !YTLCanReadKey(object, key)) return nil;
     @try {
         return [object valueForKey:key];
     } @catch (NSException *exception) {
