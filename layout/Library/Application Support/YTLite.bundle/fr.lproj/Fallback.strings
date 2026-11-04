@@ -118,3 +118,10 @@
 "SBModeAuto" = "Passer automatiquement";
 "SBModeManual" = "Afficher un bouton pour passer";
 "SBSkipButton" = "Passer : %@ ›";
+"AdBlock" = "Bloqueur de pubs";
+"HideShortsPromoCards" = "Masquer les cartes promo des Shorts";
+"HideShortsPromoCardsDesc" = "Masque les cartes produit et promotion sur les Shorts";
+"FeedFilters" = "Fil & filtres";
+"Theme" = "Thème";
+"DownloadsMenu" = "Téléchargements & copie";
+"OLEDRestart" = "Redémarre l'app pour l'appliquer partout";

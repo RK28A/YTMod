@@ -96,19 +96,19 @@ jobs:
         with:
           exclude_inputs: bundle_id,display_name,enable_demc,enable_ryd,enable_ytabc,enable_youpip,enable_yq,enable_ytuhd,enable_localization,info_note,tweak_version
 
-      - name: Start IPA download and cyan install
-        env:
-          IPA_URL: ${{ inputs.ipa_url }}
-        run: |
-          mkdir -p .logs
-          nohup bash -c 'curl -fsSL --retry 3 --retry-delay 2 -o youtube.ipa "$IPA_URL" > .logs/ipa.log 2>&1 && touch .ipa.done || touch .ipa.failed' >/dev/null 2>&1 &
-          nohup bash -c 'pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip > .logs/cyan.log 2>&1 && touch .cyan.done || touch .cyan.failed' >/dev/null 2>&1 &
-
       - name: Checkout
         uses: actions/checkout@v6
         with:
           path: src
           fetch-depth: 1
+
+      - name: Start IPA download and cyan install
+        env:
+          IPA_URL: ${{ inputs.ipa_url }}
+        run: |
+          mkdir -p .logs
+          nohup bash -c 'bash src/tools/fetch_ipa.sh "$IPA_URL" youtube.ipa > .logs/ipa.log 2>&1 && touch .ipa.done || touch .ipa.failed' >/dev/null 2>&1 &
+          nohup bash -c 'pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip > .logs/cyan.log 2>&1 && touch .cyan.done || touch .cyan.failed' >/dev/null 2>&1 &
 
       - name: Build tweaks
         id: tweaks

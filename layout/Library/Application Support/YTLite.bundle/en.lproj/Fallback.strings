@@ -118,3 +118,10 @@
 "SBModeAuto" = "Skip automatically";
 "SBModeManual" = "Show skip button";
 "SBSkipButton" = "Skip %@ ›";
+"AdBlock" = "Ad block";
+"HideShortsPromoCards" = "Hide Shorts promo cards";
+"HideShortsPromoCardsDesc" = "Hides product and promotion cards on Shorts";
+"FeedFilters" = "Feed & filters";
+"Theme" = "Theme";
+"DownloadsMenu" = "Downloads & copy";
+"OLEDRestart" = "Restart the app to apply everywhere";

@@ -169,6 +169,7 @@ static YTSettingsSectionItem *YTLDeepBlackItem(void) {
     switchOn:ytlBool(@"oledMode")
     switchBlock:^BOOL(YTSettingsCell *cell, BOOL enabled) {
         ytlSetBool(enabled, @"oledMode");
+        [[YTLClass(@"YTToastResponderEvent") eventWithMessage:LOC(@"OLEDRestart") firstResponder:[YTLClass(@"YTUIUtils") topViewControllerForPresenting]] send];
         return YES;
     }
     settingItemId:0];
@@ -234,6 +235,10 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
 
         else {
             ytlSetBool(enabled, key);
+
+            if ([key isEqualToString:@"oledMode"]) {
+                [[YTLClass(@"YTToastResponderEvent") eventWithMessage:LOC(@"OLEDRestart") firstResponder:[self parentResponder]] send];
+            }
 
             if ([key isEqualToString:@"shortsOnlyMode"]) {
                 UIViewController *rootVC = [[[UIApplication sharedApplication] delegate] window].rootViewController;
@@ -322,7 +327,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
 
     YTSettingsSectionItem *space = [YTLClass(@"YTSettingsSectionItem") itemWithTitle:nil accessibilityIdentifier:@"YTLiteSectionItem" detailTextBlock:nil selectBlock:nil];
 
-    YTSettingsSectionItem *general = [YTSettingsSectionItemClass itemWithTitle:LOC(@"General")
+    YTSettingsSectionItem *general = [YTSettingsSectionItemClass itemWithTitle:LOC(@"AdBlock")
         accessibilityIdentifier:@"YTLiteSectionItem"
         detailTextBlock:^NSString *() {
             return @"‣";
@@ -330,10 +335,13 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
             NSArray <YTSettingsSectionItem *> *rows = @[
             [self switchWithTitle:@"RemoveAds" key:@"noAds"],
-            [self switchWithTitle:@"BackgroundPlayback" key:@"backgroundPlayback"]
+            [self switchWithTitle:@"SkipAdShorts" key:@"skipAdShorts"],
+            [self switchWithTitle:@"NoPromotionCards" key:@"noPromotionCards"],
+            [self switchWithTitle:@"HideShortsPromoCards" key:@"hideShortsPromoCards"],
+            [self switchWithTitle:@"NoWatermarks" key:@"noWatermarks"]
         ];
 
-        YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:LOC(@"General") pickerSectionTitle:nil rows:[self availableRows:rows] selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];
+        YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:LOC(@"AdBlock") pickerSectionTitle:nil rows:[self availableRows:rows] selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];
         [settingsViewController pushViewController:picker];
         return YES;
     }];
@@ -352,33 +360,71 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             }];
     };
 
-    YTSettingsSectionItem *modulation = [YTSettingsSectionItemClass itemWithTitle:@"YTModulation"
+
+    YTSettingsSectionItem *sponsorBlock = sponsorBlockItem();
+
+    [sectionItems addObject:sponsorBlock];
+
+    YTSettingsSectionItem *feedMenu = [YTSettingsSectionItemClass itemWithTitle:LOC(@"FeedFilters")
         accessibilityIdentifier:@"YTLiteSectionItem"
         detailTextBlock:^NSString *() {
             return @"‣";
         }
         selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
             NSArray <YTSettingsSectionItem *> *rows = @[
-                sponsorBlockItem(),
-                [self switchWithTitle:@"OLEDMode" key:@"oledMode"],
-                [self switchWithTitle:@"SkipAdShorts" key:@"skipAdShorts"],
                 [self switchWithTitle:@"HomeFilterBar" key:@"homeFilterBar"],
                 [self switchWithTitle:@"FilterShorts" key:@"filterShorts"],
                 [self switchWithTitle:@"FilterPolls" key:@"filterPolls"],
-                [self switchWithTitle:@"DownloadButton" key:@"downloadButton"],
-                [self switchWithTitle:@"AutoClearCache" key:@"autoClearCache"]
+                [self switchWithTitle:@"NoContinueWatching" key:@"noContinueWatching"],
+                [self switchWithTitle:@"NoSearchHistory" key:@"noSearchHistory"],
+                [self switchWithTitle:@"NoRelatedWatchNexts" key:@"noRelatedWatchNexts"]
             ];
 
-            YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:@"YTModulation" pickerSectionTitle:nil rows:[self availableRows:rows] selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];
+            YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:LOC(@"FeedFilters") pickerSectionTitle:nil rows:[self availableRows:rows] selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];
             [settingsViewController pushViewController:picker];
             return YES;
         }];
 
-    [sectionItems addObject:modulation];
+    [sectionItems addObject:feedMenu];
 
-    YTSettingsSectionItem *sponsorBlock = sponsorBlockItem();
+    YTSettingsSectionItem *themeMenu = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Theme")
+        accessibilityIdentifier:@"YTLiteSectionItem"
+        detailTextBlock:^NSString *() {
+            return @"‣";
+        }
+        selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
+            NSArray <YTSettingsSectionItem *> *rows = @[
+                [self switchWithTitle:@"OLEDMode" key:@"oledMode"]
+            ];
 
-    [sectionItems addObject:sponsorBlock];
+            YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:LOC(@"Theme") pickerSectionTitle:nil rows:[self availableRows:rows] selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];
+            [settingsViewController pushViewController:picker];
+            return YES;
+        }];
+
+    [sectionItems addObject:themeMenu];
+
+    YTSettingsSectionItem *downloadsMenu = [YTSettingsSectionItemClass itemWithTitle:LOC(@"DownloadsMenu")
+        accessibilityIdentifier:@"YTLiteSectionItem"
+        detailTextBlock:^NSString *() {
+            return @"‣";
+        }
+        selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
+            NSArray <YTSettingsSectionItem *> *rows = @[
+                [self switchWithTitle:@"DownloadButton" key:@"downloadButton"],
+                [self switchWithTitle:@"CopyVideoInfo" key:@"copyVideoInfo"],
+                [self switchWithTitle:@"PostManager" key:@"postManager"],
+                [self switchWithTitle:@"SaveProfilePhoto" key:@"saveProfilePhoto"],
+                [self switchWithTitle:@"CommentManager" key:@"commentManager"]
+            ];
+
+            YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:LOC(@"DownloadsMenu") pickerSectionTitle:nil rows:[self availableRows:rows] selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];
+            [settingsViewController pushViewController:picker];
+            return YES;
+        }];
+
+    [sectionItems addObject:downloadsMenu];
+
 
     YTSettingsSectionItem *navbar = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Navbar")
     accessibilityIdentifier:@"YTLiteSectionItem"
@@ -393,7 +439,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             [self switchWithTitle:@"RemoveVoiceSearch" key:@"noVoiceSearchButton"]
         ];
 
-        if (ytlBool(@"advancedMode")) {
+        if (YES) {
             rows = [rows arrayByAddingObjectsFromArray:@[
                 [self switchWithTitle:@"StickyNavbar" key:@"stickyNavbar"],
                 [self switchWithTitle:@"NoSubbar" key:@"noSubbar"],
@@ -409,7 +455,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
 
     [sectionItems addObject:navbar];
 
-    if (ytlBool(@"advancedMode")) {
+    if (YES) {
         YTSettingsSectionItem *overlay = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Overlay")
         accessibilityIdentifier:@"YTLiteSectionItem"
         detailTextBlock:^NSString *() {
@@ -428,8 +474,6 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
                 [self switchWithTitle:@"PersistentProgressBar" key:@"persistentProgressBar"],
                 [self switchWithTitle:@"StockVolumeHUD" key:@"stockVolumeHUD"],
                 [self switchWithTitle:@"NoRelatedVids" key:@"noRelatedVids"],
-                [self switchWithTitle:@"NoPromotionCards" key:@"noPromotionCards"],
-                [self switchWithTitle:@"NoWatermarks" key:@"noWatermarks"],
                 [self switchWithTitle:@"VideoEndTime" key:@"videoEndTime"],
                 [self switchWithTitle:@"24hrFormat" key:@"24hrFormat"]
             ];
@@ -448,6 +492,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         }
         selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
             NSArray <YTSettingsSectionItem *> *rows = @[
+                [self switchWithTitle:@"BackgroundPlayback" key:@"backgroundPlayback"],
                 [self switchWithTitle:@"Miniplayer" key:@"miniplayer"],
                 [self switchWithTitle:@"PortraitFullscreen" key:@"portraitFullscreen"],
                 [self switchWithTitle:@"CopyWithTimestamp" key:@"copyWithTimestamp"],
@@ -507,8 +552,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
                 [self switchWithTitle:@"HideShortsSource" key:@"hideShortsSource"],
                 [self switchWithTitle:@"HideShortsChannelName" key:@"hideShortsChannelName"],
                 [self switchWithTitle:@"HideShortsDescription" key:@"hideShortsDescription"],
-                [self switchWithTitle:@"HideShortsAudioTrack" key:@"hideShortsAudioTrack"],
-                [self switchWithTitle:@"NoPromotionCards" key:@"hideShortsPromoCards"]
+                [self switchWithTitle:@"HideShortsAudioTrack" key:@"hideShortsAudioTrack"]
             ];
 
             YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:LOC(@"Shorts") pickerSectionTitle:nil rows:[self availableRows:rows] selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];
@@ -543,7 +587,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
 
     [sectionItems addObject:tabbar];
 
-    if (ytlBool(@"advancedMode")) {
+    if (YES) {
         YTSettingsSectionItem *other = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Other")
         accessibilityIdentifier:@"YTLiteSectionItem"
         detailTextBlock:^NSString *() {
@@ -551,10 +595,6 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         }
         selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
             NSArray <YTSettingsSectionItem *> *rows = @[
-                [self switchWithTitle:@"CopyVideoInfo" key:@"copyVideoInfo"],
-                [self switchWithTitle:@"PostManager" key:@"postManager"],
-                [self switchWithTitle:@"SaveProfilePhoto" key:@"saveProfilePhoto"],
-                [self switchWithTitle:@"CommentManager" key:@"commentManager"],
                 [self switchWithTitle:@"FixAlbums" key:@"fixAlbums"],
                 [self switchWithTitle:@"NativeShare" key:@"nativeShare"],
                 [self switchWithTitle:@"RemovePlayNext" key:@"removePlayNext"],
@@ -565,9 +605,6 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
                 [self switchWithTitle:@"RemoveNotInterestedMenu" key:@"removeNotInterestedMenu"],
                 [self switchWithTitle:@"RemoveDontRecommendMenu" key:@"removeDontRecommendMenu"],
                 [self switchWithTitle:@"RemoveReportMenu" key:@"removeReportMenu"],
-                [self switchWithTitle:@"NoContinueWatching" key:@"noContinueWatching"],
-                [self switchWithTitle:@"NoSearchHistory" key:@"noSearchHistory"],
-                [self switchWithTitle:@"NoRelatedWatchNexts" key:@"noRelatedWatchNexts"],
                 [self switchWithTitle:@"StickSortComments" key:@"stickSortComments"],
                 [self switchWithTitle:@"HideSortComments" key:@"hideSortComments"],
                 [self switchWithTitle:@"PlaylistOldMinibar" key:@"playlistOldMinibar"],
@@ -743,7 +780,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         }
         selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
             NSArray <YTSettingsSectionItem *> *rows = @[
-                [self switchWithTitle:@"Advanced" key:@"advancedMode"],
+                [self switchWithTitle:@"AutoClearCache" key:@"autoClearCache"],
 
                 [YTLClass(@"YTSettingsSectionItem") itemWithTitle:LOC(@"ClearCache") titleDescription:nil accessibilityIdentifier:@"YTLiteSectionItem" detailTextBlock:^NSString *() { return GetCacheSize(settingsViewController); } selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
                     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{

@@ -153,11 +153,27 @@ static BOOL YTLEndpointIsAd(id endpoint) {
 %end
 
 // OLED Mode
+static UIColor *YTLOLEDColor(UIColor *color) {
+    if (!ytlBool(@"oledMode") || !color) return color;
+    CGFloat white = 1, alpha = 1;
+    UIColor *resolved = [color resolvedColorWithTraitCollection:[UITraitCollection traitCollectionWithUserInterfaceStyle:UIUserInterfaceStyleDark]];
+    if (![resolved getWhite:&white alpha:&alpha]) {
+        CGFloat r = 1, g = 1, b = 1;
+        if (![resolved getRed:&r green:&g blue:&b alpha:&alpha]) return color;
+        white = 0.299 * r + 0.587 * g + 0.114 * b;
+    }
+    return white < 0.16 && alpha > 0.9 ? [UIColor blackColor] : color;
+}
+
 %hook YTCommonColorPalette
-- (UIColor *)baseBackground { return ytlBool(@"oledMode") && self.pageStyle == 1 ? [UIColor blackColor] : %orig; }
-- (UIColor *)background1 { return ytlBool(@"oledMode") && self.pageStyle == 1 ? [UIColor blackColor] : %orig; }
-- (UIColor *)background2 { return ytlBool(@"oledMode") && self.pageStyle == 1 ? [UIColor blackColor] : %orig; }
-- (UIColor *)background3 { return ytlBool(@"oledMode") && self.pageStyle == 1 ? [UIColor blackColor] : %orig; }
+- (UIColor *)baseBackground { return self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig; }
+- (UIColor *)background1 { return self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig; }
+- (UIColor *)background2 { return self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig; }
+- (UIColor *)background3 { return self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig; }
+%end
+
+%hook YTTokensColorPalette
+- (UIColor *)baseBackground { return [YTLValue(self, @"pageStyle") integerValue] == 1 ? YTLOLEDColor(%orig) : %orig; }
 %end
 
 static NSUInteger ytlSettingsGeneration = 1;
@@ -301,31 +317,10 @@ static void YTLFilterSections(NSMutableArray *sections) {
 %end
 %hook YTSectionListViewController
 - (void)loadWithModel:(YTISectionListRenderer *)model {
-    if (ytlBool(@"noAds")) {
-        NSMutableArray <YTISectionListSupportedRenderers *> *contentsArray = model.contentsArray;
-        NSIndexSet *removeIndexes = [contentsArray indexesOfObjectsPassingTest:^BOOL(YTISectionListSupportedRenderers *renderers, NSUInteger idx, BOOL *stop) {
-            YTIItemSectionRenderer *sectionRenderer = renderers.itemSectionRenderer;
-            YTIItemSectionSupportedRenderers *firstObject = [sectionRenderer.contentsArray firstObject];
-            return firstObject.hasPromotedVideoRenderer || firstObject.hasCompactPromotedVideoRenderer || firstObject.hasPromotedVideoInlineMutedRenderer;
-        }];
-        [contentsArray removeObjectsAtIndexes:removeIndexes];
-    }
-
     @try {
         YTLFilterSections(model.contentsArray);
     } @catch (NSException *exception) {}
 
-    if (ytlBool(@"filterPolls") || YTLHideShorts()) {
-        NSMutableArray *contentsArray = model.contentsArray;
-        NSIndexSet *removeIndexes = [contentsArray indexesOfObjectsPassingTest:^BOOL(YTISectionListSupportedRenderers *renderers, NSUInteger idx, BOOL *stop) {
-            id first = [renderers.itemSectionRenderer.contentsArray firstObject];
-            if (!first) return NO;
-            NSString *description = [first description];
-            if (YTLIsPollDescription(description) && ([description containsString:@"backstage"] || [description containsString:@"Backstage"])) return YES;
-            return YTLHideShorts() && ([description containsString:@"reel_shelf_renderer"] || [description containsString:@"reelShelfRenderer"]);
-        }];
-        if (removeIndexes.count) [contentsArray removeObjectsAtIndexes:removeIndexes];
-    }
     %orig;
 }
 %end
@@ -1900,6 +1895,7 @@ static void YTLShowSafeModeAlert(void) {
         YTPersonalizedSuggestionsCacheProvider = YTLClass(@"YTPersonalizedSuggestionsCacheProvider"),
         YTPivotBarIndicatorView = YTLClass(@"YTPivotBarIndicatorView"),
         YTPivotBarView = YTLClass(@"YTPivotBarView"),
+        YTTokensColorPalette = YTLClass(@"YTTokensColorPalette"),
         YTPlayabilityResolutionUserActionUIController = YTLClass(@"YTPlayabilityResolutionUserActionUIController"),
         YTPlaybackConfig = YTLClass(@"YTPlaybackConfig"),
         YTPlayerBarSegmentView = YTLClass(@"YTPlayerBarSegmentView"),
@@ -1938,18 +1934,4 @@ static void YTLShowSafeModeAlert(void) {
         ytlSetBool(NO, @"reExplore");
     }
 
-    if (!ytlBool(@"advancedMode") && !ytlBool(@"advancedModeReminder")) {
-        ytlSetBool(YES, @"advancedModeReminder");
-
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            YTAlertView *alertView = [YTLClass(@"YTAlertView") confirmationDialogWithAction:^{
-                ytlSetBool(YES, @"advancedMode");
-            }
-            actionTitle:LOC(@"Yes")
-            cancelTitle:LOC(@"No")];
-            alertView.title = @"YTLite";
-            alertView.subtitle = [NSString stringWithFormat:LOC(@"AdvancedModeReminder"), @"YTLite", LOC(@"Version"), LOC(@"Advanced")];
-            [alertView show];
-        });
-    }
 }
