@@ -1,0 +1,4 @@
+# Sites proposés par défaut sous le logo YouTube (un par ligne).
+# Exemple :
+# example.com
+# https://autre-site.com

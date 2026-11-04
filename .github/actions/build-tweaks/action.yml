@@ -99,7 +99,7 @@ runs:
         done
 
         if [ "$SOURCE_BUILD" = "true" ]; then
-          src_hash=$(cd "$SOURCE_DIR" && find Makefile control *.x *.h Utils layout tools -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -c1-12)
+          src_hash=$(cd "$SOURCE_DIR" && find Makefile control sites.txt *.x *.h Utils layout tools -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -c1-12)
           echo "ytplus.deb YTLite $src_hash" >> .plan
           version=$(grep -E '^PACKAGE_VERSION' "$SOURCE_DIR/Makefile" | sed 's/.*= *//')
           label="${version}-$(git -C "$SOURCE_DIR" rev-parse --short HEAD)"

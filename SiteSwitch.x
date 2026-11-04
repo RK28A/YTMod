@@ -18,12 +18,30 @@ static NSURL *YTLNormalizeSite(NSString *raw) {
     return url.host.length ? url : nil;
 }
 
+static NSArray <NSString *> *YTLDefaultSites(void) {
+    static NSArray *sites;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSMutableArray *list = [NSMutableArray array];
+        NSString *path = [NSBundle.ytl_defaultBundle pathForResource:@"DefaultSites" ofType:@"txt"];
+        NSString *content = path ? [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil] : nil;
+        for (NSString *line in [content componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
+            NSString *entry = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            if (entry.length && ![entry hasPrefix:@"#"]) [list addObject:entry];
+        }
+        sites = list;
+    });
+    return sites;
+}
+
 NSArray <NSString *> *YTLSiteList(void) {
     YTLUserDefaults *defaults = [YTLUserDefaults standardUserDefaults];
     NSArray *list = [defaults arrayForKey:@"siteList"];
     if (!list) {
         NSString *legacy = [defaults stringForKey:@"siteURL"];
-        list = legacy.length ? @[legacy] : @[];
+        NSMutableArray *initial = [YTLDefaultSites() mutableCopy];
+        if (legacy.length && ![initial containsObject:legacy]) [initial insertObject:legacy atIndex:0];
+        list = initial;
     }
     NSMutableArray *clean = [NSMutableArray array];
     for (id entry in list) {

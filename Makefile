@@ -21,3 +21,4 @@ include $(THEOS_MAKE_PATH)/tweak.mk
 
 before-all::
 	@command -v python3 >/dev/null 2>&1 && python3 tools/gen_feature_map.py || true
+	@if [ -f sites.txt ]; then cp sites.txt "layout/Library/Application Support/YTLite.bundle/DefaultSites.txt"; fi
