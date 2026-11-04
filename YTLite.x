@@ -163,6 +163,13 @@ static BOOL YTLEndpointIsAd(id endpoint) {
 static NSUInteger ytlSettingsGeneration = 1;
 static const char kYTLElementDecisionKey;
 
+static __thread BOOL ytlRawElementData = NO;
+
+static BOOL YTLDataContains(NSData *data, const char *needle) {
+    size_t length = strlen(needle);
+    return data.length >= length && memmem(data.bytes, data.length, needle, length) != NULL;
+}
+
 static NSInteger YTLComputeElementDecision(YTIElementRenderer *renderer) {
     BOOL noAds = ytlBool(@"noAds");
     if (noAds && renderer.hasCompatibilityOptions && renderer.compatibilityOptions.hasAdLoggingData) return 2;
@@ -170,25 +177,25 @@ static NSInteger YTLComputeElementDecision(YTIElementRenderer *renderer) {
     BOOL hideShorts = YTLHideShorts(), hidePolls = ytlBool(@"filterPolls");
     if (!noAds && !hideShorts && !hidePolls) return 0;
 
-    NSString *description = [renderer description];
+    ytlRawElementData = YES;
+    NSData *data = nil;
+    @try {
+        data = ((NSData *(*)(id, SEL))objc_msgSend)(renderer, @selector(elementData));
+    } @catch (NSException *exception) {}
+    ytlRawElementData = NO;
+    if (data.length == 0) return 0;
 
     if (noAds) {
-        static NSArray *ads;
-        static dispatch_once_t onceToken;
-        dispatch_once(&onceToken, ^{
-            ads = @[@"brand_promo", @"product_carousel", @"product_engagement_panel", @"product_item", @"text_search_ad", @"text_image_button_layout", @"carousel_headered_layout", @"carousel_footered_layout", @"square_image_layout", @"landscape_image_wide_button_layout", @"feed_ad_metadata", @"full_width_square_image_layout", @"full_width_portrait_image_layout", @"video_display_full_layout", @"video_display_full_buttoned_layout", @"video_display_button_group_layout", @"compact_promoted_item", @"in_feed_ad", @"ad_slot_renderer", @"shopping_carousel", @"shopping_item_card_list", @"statement_banner", @"masthead_ad", @"promoted_sparkles", @"_ad_with_", @"shorts_ad", @"reels_ad", @"player_overlay_ad", @"ads_info"];
-        });
-        for (NSString *ad in ads) {
-            if ([description containsString:ad]) return 1;
+        static const char *ads[] = {"brand_promo", "product_carousel", "product_engagement_panel", "product_item", "text_search_ad", "text_image_button_layout", "carousel_headered_layout", "carousel_footered_layout", "square_image_layout", "landscape_image_wide_button_layout", "feed_ad_metadata", "full_width_square_image_layout", "full_width_portrait_image_layout", "video_display_full_layout", "video_display_full_buttoned_layout", "video_display_button_group_layout", "compact_promoted_item", "in_feed_ad", "ad_slot_renderer", "shopping_carousel", "shopping_item_card_list", "statement_banner", "masthead_ad", "promoted_sparkles", "_ad_with_", "shorts_ad", "reels_ad", "player_overlay_ad", "ads_info", NULL};
+        for (int i = 0; ads[i]; i++) {
+            if (YTLDataContains(data, ads[i])) return 1;
         }
     }
 
-    if (YTLIsPollDescription(description)) return 2;
+    if (hidePolls && (YTLDataContains(data, "poll") || YTLDataContains(data, "Poll"))) return 2;
 
-    if (hideShorts && ![description containsString:@"history*"]) {
-        for (NSString *shorts in @[@"shorts_shelf.eml", @"shorts_video_cell.eml", @"6Shorts"]) {
-            if ([description containsString:shorts]) return 2;
-        }
+    if (hideShorts && !YTLDataContains(data, "history*")) {
+        if (YTLDataContains(data, "shorts_shelf.eml") || YTLDataContains(data, "shorts_video_cell.eml") || YTLDataContains(data, "6Shorts")) return 2;
     }
 
     return 0;
@@ -259,6 +266,7 @@ static void YTLFilterSections(NSMutableArray *sections) {
 
 %hook YTIElementRenderer
 - (NSData *)elementData {
+    if (ytlRawElementData) return %orig;
     switch (YTLElementDecision(self)) {
         case 1: return [NSData data];
         case 2: return nil;
@@ -1026,8 +1034,16 @@ static BOOL YTLNodeIdentifierShouldHide(NSString *identifier) {
     return NO;
 }
 
+static BOOL YTLElementModelShouldHide(ASCollectionElement *element) {
+    id model = YTLValue(element, @"nodeModel");
+    if (!model) return NO;
+    if ([model isKindOfClass:YTLClass(@"YTIElementRenderer")]) return YTLElementDecision(model) != 0;
+    return YTLItemShouldHide(model);
+}
+
 %hook ASCollectionView
 - (CGSize)sizeForElement:(ASCollectionElement *)element {
+    if (YTLElementModelShouldHide(element)) return CGSizeZero;
     if (YTLNodeIdentifierShouldHide([[element node] accessibilityIdentifier])) return CGSizeZero;
 
     if ([self.accessibilityIdentifier isEqualToString:@"id.video.scrollable_action_bar"]) {
