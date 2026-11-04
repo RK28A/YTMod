@@ -129,7 +129,9 @@
 "SiteSwitch" = "Basculer vers un site";
 "SiteSwitchDesc" = "Tape le logo YouTube puis l'icône du site pour ouvrir ton site dans l'app";
 "SiteURL" = "Adresse du site";
-"SiteURLDesc" = "Le site ouvert par le logo";
+"SiteURLDesc" = "Adresse d'un site à ouvrir depuis le logo YouTube";
 "SiteURLNone" = "Non défini";
 "SiteBackToYouTube" = "Retourner sur YouTube";
 "SiteHome" = "Accueil du site";
+"SiteAdd" = "Ajouter un site";
+"SiteRemove" = "Supprimer";

@@ -129,7 +129,9 @@
 "SiteSwitch" = "Website switch";
 "SiteSwitchDesc" = "Tap the YouTube logo, then the website icon, to open your website inside the app";
 "SiteURL" = "Website address";
-"SiteURLDesc" = "The website opened by the logo switch";
+"SiteURLDesc" = "Address of a website to open from the YouTube logo";
 "SiteURLNone" = "Not set";
 "SiteBackToYouTube" = "Back to YouTube";
 "SiteHome" = "Website home";
+"SiteAdd" = "Add a website";
+"SiteRemove" = "Remove";

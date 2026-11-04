@@ -7,6 +7,8 @@
 static const NSInteger YTLiteSection = 789;
 FOUNDATION_EXPORT NSArray <NSString *> *YTLSponsorBlockCategories(void);
 FOUNDATION_EXPORT NSURL *YTLSiteURL(void);
+FOUNDATION_EXPORT NSArray <NSString *> *YTLSiteList(void);
+FOUNDATION_EXPORT void YTLSetSiteList(NSArray <NSString *> *list);
 FOUNDATION_EXPORT NSInteger YTLSponsorBlockMode(NSString *category);
 FOUNDATION_EXPORT void YTLSetSponsorBlockMode(NSString *category, NSInteger mode);
 
@@ -270,6 +272,60 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
 }
 
 %new
+- (void)ytl_pushSitesWithSettings:(YTSettingsViewController *)settingsViewController {
+    Class itemClass = YTLClass(@"YTSettingsSectionItem");
+    NSMutableArray <YTSettingsSectionItem *> *rows = [NSMutableArray arrayWithObject:[self switchWithTitle:@"SiteSwitch" key:@"siteSwitch"]];
+
+    void (^editSite)(NSString *, NSInteger) = ^(NSString *current, NSInteger index) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:index < 0 ? LOC(@"SiteAdd") : LOC(@"SiteURL") message:nil preferredStyle:UIAlertControllerStyleAlert];
+        [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+            field.placeholder = @"example.com";
+            field.text = current;
+            field.keyboardType = UIKeyboardTypeURL;
+            field.autocapitalizationType = UITextAutocapitalizationTypeNone;
+            field.autocorrectionType = UITextAutocorrectionTypeNo;
+            field.clearButtonMode = UITextFieldViewModeWhileEditing;
+        }];
+        if (index >= 0) {
+            [alert addAction:[UIAlertAction actionWithTitle:LOC(@"SiteRemove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+                NSMutableArray *list = [YTLSiteList() mutableCopy];
+                if (index < (NSInteger)list.count) [list removeObjectAtIndex:index];
+                YTLSetSiteList(list);
+                [settingsViewController reloadData];
+            }]];
+        }
+        [alert addAction:[UIAlertAction actionWithTitle:LOC(@"Cancel") style:UIAlertActionStyleCancel handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            NSString *value = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            if (value.length == 0) return;
+            NSMutableArray *list = [YTLSiteList() mutableCopy];
+            if (index >= 0 && index < (NSInteger)list.count) list[index] = value;
+            else if (![list containsObject:value]) [list addObject:value];
+            YTLSetSiteList(list);
+            [settingsViewController reloadData];
+        }]];
+        [[YTLClass(@"YTUIUtils") topViewControllerForPresenting] presentViewController:alert animated:YES completion:nil];
+    };
+
+    NSArray <NSString *> *sites = YTLSiteList();
+    for (NSUInteger i = 0; i < sites.count; i++) {
+        NSString *site = sites[i];
+        [rows addObject:[itemClass itemWithTitle:site titleDescription:nil accessibilityIdentifier:@"YTLiteSectionItem" detailTextBlock:^NSString *() { return @"‣"; } selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
+            editSite(site, (NSInteger)i);
+            return YES;
+        }]];
+    }
+
+    [rows addObject:[itemClass itemWithTitle:LOC(@"SiteAdd") titleDescription:LOC(@"SiteURLDesc") accessibilityIdentifier:@"YTLiteSectionItem" detailTextBlock:^NSString *() { return @"+"; } selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
+        editSite(@"", -1);
+        return YES;
+    }]];
+
+    YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:LOC(@"WebsiteMenu") pickerSectionTitle:nil rows:rows selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];
+    [settingsViewController pushViewController:picker];
+}
+
+%new
 - (void)ytl_pushSponsorBlockWithSettings:(YTSettingsViewController *)settingsViewController {
     Class itemClass = YTLClass(@"YTSettingsSectionItem");
     NSMutableArray <YTSettingsSectionItem *> *rows = [NSMutableArray arrayWithObjects:
@@ -391,42 +447,11 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
     YTSettingsSectionItem *siteMenu = [YTSettingsSectionItemClass itemWithTitle:LOC(@"WebsiteMenu")
         accessibilityIdentifier:@"YTLiteSectionItem"
         detailTextBlock:^NSString *() {
-            NSURL *url = YTLSiteURL();
-            return ytlBool(@"siteSwitch") ? (url.host ?: LOC(@"SiteURLNone")) : LOC(@"Disabled");
+            NSUInteger count = YTLSiteList().count;
+            return ytlBool(@"siteSwitch") ? [NSString stringWithFormat:@"%lu", (unsigned long)count] : LOC(@"Disabled");
         }
         selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
-            NSArray <YTSettingsSectionItem *> *rows = @[
-                [self switchWithTitle:@"SiteSwitch" key:@"siteSwitch"],
-                [YTSettingsSectionItemClass itemWithTitle:LOC(@"SiteURL")
-                    titleDescription:LOC(@"SiteURLDesc")
-                    accessibilityIdentifier:@"YTLiteSectionItem"
-                    detailTextBlock:^NSString *() {
-                        NSURL *url = YTLSiteURL();
-                        return url.host ?: LOC(@"SiteURLNone");
-                    }
-                    selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
-                        UIAlertController *alert = [UIAlertController alertControllerWithTitle:LOC(@"SiteURL") message:nil preferredStyle:UIAlertControllerStyleAlert];
-                        [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-                            field.placeholder = @"example.com";
-                            field.text = [[YTLUserDefaults standardUserDefaults] stringForKey:@"siteURL"];
-                            field.keyboardType = UIKeyboardTypeURL;
-                            field.autocapitalizationType = UITextAutocapitalizationTypeNone;
-                            field.autocorrectionType = UITextAutocorrectionTypeNo;
-                            field.clearButtonMode = UITextFieldViewModeWhileEditing;
-                        }];
-                        [alert addAction:[UIAlertAction actionWithTitle:LOC(@"Cancel") style:UIAlertActionStyleCancel handler:nil]];
-                        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-                            NSString *value = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                            [[YTLUserDefaults standardUserDefaults] setObject:value ?: @"" forKey:@"siteURL"];
-                            [settingsViewController reloadData];
-                        }]];
-                        [[YTLClass(@"YTUIUtils") topViewControllerForPresenting] presentViewController:alert animated:YES completion:nil];
-                        return YES;
-                    }]
-            ];
-
-            YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:LOC(@"WebsiteMenu") pickerSectionTitle:nil rows:rows selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];
-            [settingsViewController pushViewController:picker];
+            [self ytl_pushSitesWithSettings:settingsViewController];
             return YES;
         }];
 

@@ -73,6 +73,7 @@ static inline BOOL YTLSetValue(id object, id value, NSString *key) {
 - (UIImage *)resizedImageNamed:(NSString *)iconName;
 - (NSArray *)availableRows:(NSArray *)rows;
 - (void)ytl_pushSponsorBlockWithSettings:(id)settingsViewController;
+- (void)ytl_pushSitesWithSettings:(id)settingsViewController;
 @end
 
 @interface YTLightweightQTMButton ()
