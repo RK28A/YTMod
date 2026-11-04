@@ -17,6 +17,10 @@ case "$url" in
     id="${url#*id=}"; id="${id%%&*}"
     url="https://drive.usercontent.google.com/download?id=$id&export=download&confirm=t"
     ;;
+  *pixeldrain.com/u/*)
+    id="${url#*pixeldrain.com/u/}"; id="${id%%[/?#]*}"
+    url="https://pixeldrain.com/api/file/$id?download"
+    ;;
   *github.com/*/blob/*)
     url="${url/\/blob\//\/raw\/}"
     ;;
@@ -48,7 +52,8 @@ done
 code=$(curl -s -o /dev/null -w '%{http_code}' -L -A "$ua" "$url")
 echo "IPA download failed (HTTP $code)."
 case "$code" in
-  401|403) echo "The server refuses the download. Use a direct, public link (no login, not expired): e.g. a GitHub release asset, Dropbox with dl=1, or a fresh link from your host." ;;
+  401|403) [[ "$url" == *pixeldrain.com* ]] && echo "Pixeldrain refuses the download: the free download limit of this file is reached or GitHub servers are blocked. Upload the IPA somewhere else (Dropbox with dl=1, Google Drive shared publicly, or a GitHub release)."
+    echo "The server refuses the download. Use a direct, public link (no login, not expired): e.g. a GitHub release asset, Dropbox with dl=1, or a fresh link from your host." ;;
   404) echo "The file was not found at this address." ;;
   200) echo "The link opens a web page instead of the file. Use the direct download link of the IPA." ;;
 esac
