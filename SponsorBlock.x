@@ -21,10 +21,27 @@ NSArray <NSString *> *YTLSponsorBlockCategories(void) {
     return @[@"sponsor", @"selfpromo", @"interaction", @"intro", @"outro", @"preview", @"music_offtopic", @"filler"];
 }
 
+NSInteger YTLSponsorBlockMode(NSString *category) {
+    return ytlInt([@"sbMode_" stringByAppendingString:category]);
+}
+
+void YTLSetSponsorBlockMode(NSString *category, NSInteger mode) {
+    ytlSetInt((int)mode, [@"sbMode_" stringByAppendingString:category]);
+}
+
+static void SBMigrateModes(void) {
+    YTLUserDefaults *defaults = [YTLUserDefaults standardUserDefaults];
+    for (NSString *category in YTLSponsorBlockCategories()) {
+        NSString *modeKey = [@"sbMode_" stringByAppendingString:category];
+        if ([defaults objectForKey:modeKey]) continue;
+        [defaults setInteger:[defaults boolForKey:[@"sb_" stringByAppendingString:category]] ? 1 : 0 forKey:modeKey];
+    }
+}
+
 static NSArray <NSString *> *SBEnabledCategories(void) {
     NSMutableArray *enabled = [NSMutableArray array];
     for (NSString *category in YTLSponsorBlockCategories()) {
-        if (ytlBool([@"sb_" stringByAppendingString:category])) [enabled addObject:category];
+        if (YTLSponsorBlockMode(category) != 0) [enabled addObject:category];
     }
     return enabled;
 }
@@ -94,6 +111,83 @@ static NSString *SBCategoryName(NSString *category) {
     return [name isEqualToString:key] ? category : name;
 }
 
+static const NSInteger kSBSkipButtonTag = 9912;
+static NSDictionary *sbPendingSegment;
+static __weak YTPlayerViewController *sbButtonPlayer;
+
+static void SBSeek(YTPlayerViewController *player, double time) {
+    if ([player respondsToSelector:@selector(seekToTime:)]) {
+        ((void (*)(id, SEL, CGFloat))objc_msgSend)(player, @selector(seekToTime:), (CGFloat)time);
+    }
+}
+
+@interface YTLSponsorSkipButton : UIButton
+@end
+
+@implementation YTLSponsorSkipButton
+- (instancetype)init {
+    self = [super initWithFrame:CGRectZero];
+    if (!self) return nil;
+    self.tag = kSBSkipButtonTag;
+    self.translatesAutoresizingMaskIntoConstraints = NO;
+    self.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.72];
+    self.layer.cornerRadius = 16;
+    self.layer.borderWidth = 1;
+    self.layer.borderColor = [[UIColor whiteColor] colorWithAlphaComponent:0.25].CGColor;
+    self.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
+    self.contentEdgeInsets = UIEdgeInsetsMake(7, 14, 7, 14);
+    [self setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    [self addTarget:self action:@selector(skip) forControlEvents:UIControlEventTouchUpInside];
+    return self;
+}
+
+- (void)skip {
+    YTPlayerViewController *player = sbButtonPlayer;
+    NSDictionary *segment = sbPendingSegment;
+    if (player && segment) {
+        [sbSkipped addObject:segment[@"uuid"]];
+        SBSeek(player, [segment[@"end"] doubleValue]);
+    }
+    sbPendingSegment = nil;
+    [UIView animateWithDuration:0.2 animations:^{ self.alpha = 0; } completion:^(BOOL finished) { self.hidden = YES; }];
+}
+@end
+
+static void SBUpdateSkipButton(YTPlayerViewController *player, NSDictionary *segment) {
+    UIView *host = player.view;
+    YTLSponsorSkipButton *button = (YTLSponsorSkipButton *)[host viewWithTag:kSBSkipButtonTag];
+
+    if (!segment) {
+        if (button && !button.hidden) {
+            sbPendingSegment = nil;
+            [UIView animateWithDuration:0.2 animations:^{ button.alpha = 0; } completion:^(BOOL finished) { button.hidden = YES; }];
+        }
+        return;
+    }
+
+    if (!host.window || ![host.superview isKindOfClass:NSClassFromString(@"YTWatchView")]) return;
+
+    if (![button isKindOfClass:[YTLSponsorSkipButton class]]) {
+        button = [YTLSponsorSkipButton new];
+        button.hidden = YES;
+        [host addSubview:button];
+        [NSLayoutConstraint activateConstraints:@[
+            [button.trailingAnchor constraintEqualToAnchor:host.safeAreaLayoutGuide.trailingAnchor constant:-16],
+            [button.bottomAnchor constraintEqualToAnchor:host.safeAreaLayoutGuide.bottomAnchor constant:-56]
+        ]];
+    }
+
+    sbButtonPlayer = player;
+    if ([sbPendingSegment[@"uuid"] isEqual:segment[@"uuid"]] && !button.hidden) return;
+    sbPendingSegment = segment;
+
+    [button setTitle:[NSString stringWithFormat:LOC(@"SBSkipButton"), SBCategoryName(segment[@"category"])] forState:UIControlStateNormal];
+    [host bringSubviewToFront:button];
+    button.alpha = 0;
+    button.hidden = NO;
+    [UIView animateWithDuration:0.2 animations:^{ button.alpha = 1; }];
+}
+
 static void SBTrackMarkers(YTPlayerViewController *player, YTSingleVideoController *video) {
     if (!player.view.window || ![player.view.superview isKindOfClass:NSClassFromString(@"YTWatchView")]) return;
     NSString *videoID = player.contentVideoID;
@@ -124,18 +218,23 @@ static void SBHandleTime(YTPlayerViewController *player, double time) {
         return;
     }
 
+    NSDictionary *manual = nil;
+
     for (NSDictionary *segment in segments) {
         double start = [segment[@"start"] doubleValue], end = [segment[@"end"] doubleValue];
         if (time < start) break;
         if (time >= end - 0.35 || [sbSkipped containsObject:segment[@"uuid"]]) continue;
 
-        [sbSkipped addObject:segment[@"uuid"]];
-
-        if ([player respondsToSelector:@selector(seekToTime:)]) {
-            ((void (*)(id, SEL, CGFloat))objc_msgSend)(player, @selector(seekToTime:), (CGFloat)end);
-        } else {
-            return;
+        NSInteger mode = YTLSponsorBlockMode(segment[@"category"]);
+        if (mode == 0) continue;
+        if (mode == 2) {
+            if (!manual) manual = segment;
+            continue;
         }
+
+        [sbSkipped addObject:segment[@"uuid"]];
+        SBSeek(player, end);
+        SBUpdateSkipButton(player, nil);
 
         if (ytlBool(@"sbNotify")) {
             NSString *message = [NSString stringWithFormat:LOC(@"SBSkipped"), SBCategoryName(segment[@"category"])];
@@ -143,6 +242,8 @@ static void SBHandleTime(YTPlayerViewController *player, double time) {
         }
         return;
     }
+
+    SBUpdateSkipButton(player, manual);
 }
 
 %hook YTPlayerViewController
@@ -244,6 +345,7 @@ static void SBLayoutMarkers(UIView *barView, CGRect barFrame) {
     sbPending = [NSMutableSet set];
     sbSkipped = [NSMutableSet set];
     sbBarViews = [NSHashTable weakObjectsHashTable];
+    SBMigrateModes();
 
     %init;
 }

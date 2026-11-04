@@ -6,6 +6,12 @@
 
 static const NSInteger YTLiteSection = 789;
 FOUNDATION_EXPORT NSArray <NSString *> *YTLSponsorBlockCategories(void);
+FOUNDATION_EXPORT NSInteger YTLSponsorBlockMode(NSString *category);
+FOUNDATION_EXPORT void YTLSetSponsorBlockMode(NSString *category, NSInteger mode);
+
+static NSArray <NSString *> *YTLSponsorBlockModeTitles(void) {
+    return @[LOC(@"SBModeOff"), LOC(@"SBModeAuto"), LOC(@"SBModeManual")];
+}
 static const char kYTLSettingKey;
 
 #import "YTLFeatureMap.h"
@@ -224,6 +230,46 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
 }
 
 %new
+- (void)ytl_pushSponsorBlockWithSettings:(YTSettingsViewController *)settingsViewController {
+    Class itemClass = YTLClass(@"YTSettingsSectionItem");
+    NSMutableArray <YTSettingsSectionItem *> *rows = [NSMutableArray arrayWithObjects:
+        [self switchWithTitle:@"SponsorBlock" key:@"sponsorBlock"],
+        [self switchWithTitle:@"SBNotify" key:@"sbNotify"],
+        [self switchWithTitle:@"SBMarkers" key:@"sbMarkers"],
+        nil];
+
+    for (NSString *category in YTLSponsorBlockCategories()) {
+        NSString *titleKey = [@"SB_" stringByAppendingString:category];
+        YTSettingsSectionItem *item = [itemClass itemWithTitle:LOC(titleKey)
+            titleDescription:LOC([titleKey stringByAppendingString:@"Desc"])
+            accessibilityIdentifier:@"YTLiteSectionItem"
+            detailTextBlock:^NSString *() {
+                NSArray *titles = YTLSponsorBlockModeTitles();
+                NSInteger mode = YTLSponsorBlockMode(category);
+                return (mode >= 0 && mode < (NSInteger)titles.count) ? titles[mode] : titles[0];
+            }
+            selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
+                NSMutableArray <YTSettingsSectionItem *> *modes = [NSMutableArray array];
+                NSArray *titles = YTLSponsorBlockModeTitles();
+                for (NSUInteger i = 0; i < titles.count; i++) {
+                    [modes addObject:[itemClass checkmarkItemWithTitle:titles[i] titleDescription:nil selectBlock:^BOOL (YTSettingsCell *modeCell, NSUInteger index) {
+                        YTLSetSponsorBlockMode(category, (NSInteger)index);
+                        [settingsViewController reloadData];
+                        return YES;
+                    }]];
+                }
+                YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:LOC(titleKey) pickerSectionTitle:nil rows:modes selectedItemIndex:YTLSponsorBlockMode(category) parentResponder:[self parentResponder]];
+                [settingsViewController pushViewController:picker];
+                return YES;
+            }];
+        [rows addObject:item];
+    }
+
+    YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:@"SponsorBlock" pickerSectionTitle:nil rows:[self availableRows:rows] selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];
+    [settingsViewController pushViewController:picker];
+}
+
+%new
 - (YTSettingsSectionItem *)linkWithTitle:(NSString *)title description:(NSString *)description link:(NSString *)link {
     return [YTLClass(@"YTSettingsSectionItem") itemWithTitle:title
     titleDescription:description
@@ -260,6 +306,18 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
 
     [sectionItems addObject:general];
 
+    YTSettingsSectionItem *(^sponsorBlockItem)(void) = ^YTSettingsSectionItem *(void) {
+        return [YTSettingsSectionItemClass itemWithTitle:@"SponsorBlock"
+            accessibilityIdentifier:@"YTLiteSectionItem"
+            detailTextBlock:^NSString *() {
+                return ytlBool(@"sponsorBlock") ? @"‣" : LOC(@"Disabled");
+            }
+            selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
+                [self ytl_pushSponsorBlockWithSettings:settingsViewController];
+                return YES;
+            }];
+    };
+
     YTSettingsSectionItem *modulation = [YTSettingsSectionItemClass itemWithTitle:@"YTModulation"
         accessibilityIdentifier:@"YTLiteSectionItem"
         detailTextBlock:^NSString *() {
@@ -267,6 +325,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         }
         selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
             NSArray <YTSettingsSectionItem *> *rows = @[
+                sponsorBlockItem(),
                 [self switchWithTitle:@"OLEDMode" key:@"oledMode"],
                 [self switchWithTitle:@"SkipAdShorts" key:@"skipAdShorts"],
                 [self switchWithTitle:@"HomeFilterBar" key:@"homeFilterBar"],
@@ -283,25 +342,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
 
     [sectionItems addObject:modulation];
 
-    YTSettingsSectionItem *sponsorBlock = [YTSettingsSectionItemClass itemWithTitle:@"SponsorBlock"
-        accessibilityIdentifier:@"YTLiteSectionItem"
-        detailTextBlock:^NSString *() {
-            return ytlBool(@"sponsorBlock") ? @"‣" : LOC(@"Disabled");
-        }
-        selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
-            NSMutableArray <YTSettingsSectionItem *> *rows = [NSMutableArray arrayWithObjects:
-                [self switchWithTitle:@"SponsorBlock" key:@"sponsorBlock"],
-                [self switchWithTitle:@"SBNotify" key:@"sbNotify"],
-                [self switchWithTitle:@"SBMarkers" key:@"sbMarkers"],
-                nil];
-            for (NSString *category in YTLSponsorBlockCategories()) {
-                [rows addObject:[self switchWithTitle:[@"SB_" stringByAppendingString:category] key:[@"sb_" stringByAppendingString:category]]];
-            }
-
-            YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:@"SponsorBlock" pickerSectionTitle:nil rows:[self availableRows:rows] selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];
-            [settingsViewController pushViewController:picker];
-            return YES;
-        }];
+    YTSettingsSectionItem *sponsorBlock = sponsorBlockItem();
 
     [sectionItems addObject:sponsorBlock];
 

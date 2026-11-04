@@ -62,6 +62,7 @@ static inline BOOL YTLSetValue(id object, id value, NSString *key) {
 - (YTSettingsSectionItem *)linkWithTitle:(NSString *)title description:(NSString *)description link:(NSString *)link;
 - (UIImage *)resizedImageNamed:(NSString *)iconName;
 - (NSArray *)availableRows:(NSArray *)rows;
+- (void)ytl_pushSponsorBlockWithSettings:(id)settingsViewController;
 @end
 
 @interface YTLightweightQTMButton ()

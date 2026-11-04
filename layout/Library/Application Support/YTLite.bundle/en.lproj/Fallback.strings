@@ -114,3 +114,7 @@
 "FilterPollsDesc" = "Hides community polls in feeds";
 "SBMarkers" = "Show segments on the progress bar";
 "SBMarkersDesc" = "Colors sponsored and other segments on the video timeline";
+"SBModeOff" = "Off";
+"SBModeAuto" = "Skip automatically";
+"SBModeManual" = "Show skip button";
+"SBSkipButton" = "Skip %@ ›";

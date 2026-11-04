@@ -114,3 +114,7 @@
 "FilterPollsDesc" = "Masque les sondages de la communauté dans les fils";
 "SBMarkers" = "Afficher les passages sur la barre";
 "SBMarkersDesc" = "Colore les sponsors et autres passages sur la barre de lecture de la vidéo";
+"SBModeOff" = "Désactivé";
+"SBModeAuto" = "Passer automatiquement";
+"SBModeManual" = "Afficher un bouton pour passer";
+"SBSkipButton" = "Passer : %@ ›";

@@ -182,8 +182,26 @@ static NSInteger YTLElementDecision(YTIElementRenderer *renderer) {
     return decision;
 }
 
+static BOOL YTLHasFlag(id object, SEL selector) {
+    return [object respondsToSelector:selector] && ((BOOL (*)(id, SEL))objc_msgSend)(object, selector);
+}
+
+static BOOL YTLItemIsAd(id item) {
+    static NSArray <NSString *> *flags;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        flags = @[@"hasPromotedVideoRenderer", @"hasCompactPromotedVideoRenderer", @"hasPromotedVideoInlineMutedRenderer", @"hasCompactPromotedBannerRenderer", @"hasCompactPromotedItemRenderer", @"hasSearchPyvRenderer", @"hasPromoted15ClickPtTextCtdWatchRenderer", @"hasPromoted15ClickPtTextWatchRenderer", @"hasPromoted15ClickTextCtdWatchRenderer", @"hasPromoted15ClickTextWatchRenderer", @"hasPromotedDiscoveryAppPromoCompactFormRenderer", @"hasPromotedSparklesTextCtdWatch15ClickRenderer", @"hasPromotedSparklesTextCtdWatchGridFormRenderer", @"hasPromotedSparklesTextCtdWatchWideFormRenderer", @"hasPromotedSparklesTextWatch15ClickRenderer", @"hasPromotedSparklesTextWatchGridFormRenderer", @"hasPromotedSparklesTextWatchWideFormRenderer", @"hasPromotedSparklesTextHomeRenderer", @"hasPromotedSparklesTextProductHomeRenderer", @"hasPromotedSparklesTextCtdHomeRenderer", @"hasPromotedSparklesTextCtdHomeCompactFormRenderer", @"hasPromotedSparklesTextProductWatchRenderer", @"hasPromotedSparklesTextSearchRenderer", @"hasPromotedAppInstallRenderer", @"hasPromotedTextBannerRenderer", @"hasAdsWebViewRenderer", @"hasAdSlotRenderer", @"hasCompanionAdRenderer"];
+    });
+    for (NSString *flag in flags) {
+        if (YTLHasFlag(item, NSSelectorFromString(flag))) return YES;
+    }
+    return NO;
+}
+
 static BOOL YTLItemShouldHide(id item) {
     if (!item) return NO;
+    if (ytlBool(@"noAds") && YTLItemIsAd(item)) return YES;
+    if (YTLHideShorts() && (YTLHasFlag(item, @selector(hasReelItemRenderer)) || YTLHasFlag(item, @selector(hasReelGridRenderer)) || YTLHasFlag(item, @selector(hasReelShelfRenderer)))) return YES;
     for (NSString *key in @[@"elementRenderer", @"richItemRenderer.content.elementRenderer"]) {
         id renderer = nil;
         @try {
@@ -981,8 +999,18 @@ static BOOL findCell(ASNodeController *nodeController, NSArray <NSString *> *ide
     return NO;
 }
 
+static BOOL YTLNodeIdentifierShouldHide(NSString *identifier) {
+    if (identifier.length == 0) return NO;
+    if ([identifier isEqualToString:@"statement_banner.view"] && ytlBool(@"noAds")) return YES;
+    if (YTLIsPollDescription(identifier)) return YES;
+    if (YTLHideShorts() && ([identifier isEqualToString:@"eml.shorts-grid"] || [identifier isEqualToString:@"eml.shorts-shelf"])) return YES;
+    return NO;
+}
+
 %hook ASCollectionView
 - (CGSize)sizeForElement:(ASCollectionElement *)element {
+    if (YTLNodeIdentifierShouldHide([[element node] accessibilityIdentifier])) return CGSizeZero;
+
     if ([self.accessibilityIdentifier isEqualToString:@"id.video.scrollable_action_bar"]) {
         ASCellNode *node = [element node];
         ASNodeController *nodeController = [node controller];
@@ -1010,14 +1038,7 @@ static BOOL findCell(ASNodeController *nodeController, NSArray <NSString *> *ide
     UICollectionViewCell *cell = %orig;
     BOOL shouldRemove = NO;
 
-    if ([cell isKindOfClass:objc_lookUpClass("_ASCollectionViewCell")]) {
-        _ASCollectionViewCell *asCell = (_ASCollectionViewCell *)cell;
-        if ([asCell respondsToSelector:@selector(node)]) {
-            NSString *idToRemove = [[asCell node] accessibilityIdentifier];
-            shouldRemove = [idToRemove isEqualToString:@"statement_banner.view"] || YTLIsPollDescription(idToRemove) ||
-                (([idToRemove isEqualToString:@"eml.shorts-grid"] || [idToRemove isEqualToString:@"eml.shorts-shelf"]) && YTLHideShorts());
-        }
-    } else {
+    if (![cell isKindOfClass:objc_lookUpClass("_ASCollectionViewCell")]) {
         shouldRemove = ([cell isKindOfClass:objc_lookUpClass("YTReelShelfCell")] && YTLHideShorts()) ||
             ([cell isKindOfClass:objc_lookUpClass("YTHorizontalCardListCell")] && ytlBool(@"noContinueWatching"));
     }
