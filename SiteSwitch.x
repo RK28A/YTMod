@@ -303,6 +303,66 @@ static UIImage *YTLYouTubeIcon(void) {
 
 static void YTLOpenSiteURL(NSURL *url);
 
+static NSMutableSet <NSString *> *siteVisitedHosts;
+
+static NSString *YTLBareHost(NSString *host) {
+    host = [host.lowercaseString stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"."]];
+    return [host hasPrefix:@"www."] ? [host substringFromIndex:4] : host;
+}
+
+static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hosts) {
+    if (!cookie.sessionOnly) return NO;
+    NSString *domain = YTLBareHost(cookie.domain);
+    if (domain.length == 0) return NO;
+    for (NSString *blocked in @[@"google", @"youtube", @"gstatic", @"googleapis", @"youtu.be", @"ggpht"]) {
+        if ([domain isEqualToString:blocked] || [domain hasPrefix:[blocked stringByAppendingString:@"."]] || [domain containsString:[@"." stringByAppendingString:[blocked stringByAppendingString:@"."]]]) return NO;
+    }
+    for (NSString *host in hosts) {
+        if ([host isEqualToString:domain] || [host hasSuffix:[@"." stringByAppendingString:domain]]) return YES;
+    }
+    return NO;
+}
+
+@interface YTLSitePopupController : UIViewController <WKUIDelegate, WKNavigationDelegate>
+@property (nonatomic, strong) WKWebView *webView;
+@end
+
+@implementation YTLSitePopupController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = [UIColor systemBackgroundColor];
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(done)];
+    self.webView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.webView];
+    [NSLayoutConstraint activateConstraints:@[
+        [self.webView.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
+        [self.webView.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+        [self.webView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [self.webView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor]
+    ]];
+}
+
+- (void)done {
+    [self.navigationController.presentingViewController dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)webView:(WKWebView *)webView didCommitNavigation:(WKNavigation *)navigation {
+    if (webView.URL.host) [siteVisitedHosts addObject:YTLBareHost(webView.URL.host)];
+    self.title = webView.URL.host;
+}
+
+- (void)webViewDidClose:(WKWebView *)webView {
+    [self done];
+}
+
+- (WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures {
+    if (navigationAction.request.URL) [webView loadRequest:navigationAction.request];
+    return nil;
+}
+
+@end
+
 @implementation YTLSiteViewController
 
 + (instancetype)shared {
@@ -325,6 +385,26 @@ static void YTLOpenSiteURL(NSURL *url);
     configuration.allowsPictureInPictureMediaPlayback = YES;
     configuration.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     configuration.websiteDataStore = [WKWebsiteDataStore defaultDataStore];
+    if (!siteVisitedHosts) siteVisitedHosts = [NSMutableSet set];
+    for (NSString *entry in YTLSiteList()) {
+        NSString *host = YTLNormalizeSite(entry).host;
+        if (host) [siteVisitedHosts addObject:YTLBareHost(host)];
+    }
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(persistSessionCookies) name:UIApplicationDidEnterBackgroundNotification object:nil];
+
+    NSString *autofillScript = @"(function(){"
+        "if(window.__ytlAF)return;window.__ytlAF=1;"
+        "function bad(i){var a=(i.getAttribute('autocomplete')||'').toLowerCase();return !a||a==='off'||a==='false'||a==='nope';}"
+        "function fix(){document.querySelectorAll('input[type=password]').forEach(function(p){"
+        "var hint=((p.name||'')+' '+(p.id||'')+' '+(p.placeholder||'')).toLowerCase();"
+        "if(bad(p))p.setAttribute('autocomplete',/new|confirm|repeat|register|signup|inscri/.test(hint)?'new-password':'current-password');"
+        "var scope=p.form||document;var prev=null;"
+        "scope.querySelectorAll('input[type=email],input[type=text],input[type=tel],input:not([type])').forEach(function(i){if(i.compareDocumentPosition(p)&4)prev=i;});"
+        "if(prev&&bad(prev))prev.setAttribute('autocomplete','username');});"
+        "document.querySelectorAll('input[type=email]').forEach(function(i){if(bad(i))i.setAttribute('autocomplete','username');});}"
+        "fix();var t;new MutationObserver(function(){clearTimeout(t);t=setTimeout(fix,300);}).observe(document.documentElement,{childList:true,subtree:true});"
+        "})();";
+    [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:autofillScript injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:NO]];
 
     NSString *logoScript = @"(function(){"
         "if(window.__ytlBack)return;window.__ytlBack=1;"
@@ -504,14 +584,64 @@ static void YTLOpenSiteURL(NSURL *url);
     [self.webView evaluateJavaScript:@"document.querySelectorAll('video,audio').forEach(function(m){try{m.pause();}catch(e){}});" completionHandler:nil];
 }
 
+- (void)webView:(WKWebView *)webView didCommitNavigation:(WKNavigation *)navigation {
+    if (webView.URL.host) [siteVisitedHosts addObject:YTLBareHost(webView.URL.host)];
+}
+
+- (void)persistSessionCookies {
+    if (!self.isViewLoaded || !self.webView) return;
+    WKHTTPCookieStore *store = self.webView.configuration.websiteDataStore.httpCookieStore;
+    NSSet <NSString *> *hosts = [siteVisitedHosts copy];
+    UIApplication *app = [UIApplication sharedApplication];
+    __block UIBackgroundTaskIdentifier task = [app beginBackgroundTaskWithExpirationHandler:^{
+        [app endBackgroundTask:task];
+        task = UIBackgroundTaskInvalid;
+    }];
+    [store getAllCookies:^(NSArray <NSHTTPCookie *> *cookies) {
+        dispatch_group_t group = dispatch_group_create();
+        for (NSHTTPCookie *cookie in cookies) {
+            if (!YTLShouldPersistCookie(cookie, hosts)) continue;
+            NSMutableDictionary *properties = [cookie.properties mutableCopy];
+            [properties removeObjectForKey:NSHTTPCookieDiscard];
+            [properties removeObjectForKey:NSHTTPCookieMaximumAge];
+            properties[NSHTTPCookieExpires] = [NSDate dateWithTimeIntervalSinceNow:30 * 24 * 3600];
+            NSHTTPCookie *persistent = [NSHTTPCookie cookieWithProperties:properties];
+            if (!persistent) continue;
+            dispatch_group_enter(group);
+            [store setCookie:persistent completionHandler:^{ dispatch_group_leave(group); }];
+        }
+        dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+            if (task != UIBackgroundTaskInvalid) {
+                [app endBackgroundTask:task];
+                task = UIBackgroundTaskInvalid;
+            }
+        });
+    }];
+}
+
 - (void)close {
     [self pauseMedia];
+    [self persistSessionCookies];
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures {
-    if (!navigationAction.targetFrame.isMainFrame && navigationAction.request.URL) [webView loadRequest:navigationAction.request];
-    return nil;
+    if (navigationAction.targetFrame) return nil;
+    if (self.presentedViewController || !self.view.window) {
+        if (navigationAction.request.URL) [webView loadRequest:navigationAction.request];
+        return nil;
+    }
+
+    WKWebView *popup = [[WKWebView alloc] initWithFrame:CGRectZero configuration:configuration];
+    popup.customUserAgent = webView.customUserAgent;
+    YTLSitePopupController *controller = [YTLSitePopupController new];
+    controller.webView = popup;
+    popup.UIDelegate = controller;
+    popup.navigationDelegate = controller;
+    UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:controller];
+    navigation.modalPresentationStyle = UIModalPresentationPageSheet;
+    [self presentViewController:navigation animated:YES completion:nil];
+    return popup;
 }
 
 @end
