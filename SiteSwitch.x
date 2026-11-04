@@ -338,7 +338,10 @@ static void YTLOpenSiteURL(NSURL *url);
         "var c=(n.className&&n.className.baseVal!==undefined?n.className.baseVal:n.className)||'';var id=n.id||'';"
         "if(/logo|brand/i.test(c+' '+id))return n;"
         "if(n.tagName==='IMG'&&(/logo/i.test(n.alt||'')||/logo/i.test(n.src||'')||(name&&norm(n.alt).indexOf(name)>=0)))return n;"
-        "if(name&&name.length>2&&n.children.length===0&&norm(n.textContent)===name)return n;}"
+        "if(name&&name.length>2&&n.children.length===0&&norm(n.textContent)===name)return n;"
+        "if((n.tagName==='A'||n.tagName==='IMG'||n.tagName==='svg'||n.tagName==='SVG')&&n.closest&&n.closest('header,nav,[role=banner]')){"
+        "var r=n.getBoundingClientRect();if(r.top<140&&r.left<window.innerWidth*0.45&&r.width>0&&r.width<window.innerWidth*0.6){"
+        "var hd=n.closest('header,nav,[role=banner]');var first=hd.querySelector('a[href],img,svg');if(first&&(first===n||first.contains(n)||n.contains(first)))return n;}}}"
         "return null;}"
         "document.addEventListener('click',function(e){var l=logoOf(e.target);if(!l)return;e.preventDefault();e.stopPropagation();"
         "var r=l.getBoundingClientRect();window.webkit.messageHandlers.ytlBack.postMessage({x:r.left,y:r.top,w:r.width,h:r.height});},true);"
@@ -490,7 +493,19 @@ static void YTLOpenSiteURL(NSURL *url);
     }
 }
 
+- (void)pauseMedia {
+    SEL modern = NSSelectorFromString(@"pauseAllMediaPlaybackWithCompletionHandler:");
+    SEL legacy = NSSelectorFromString(@"pauseAllMediaPlayback:");
+    if ([self.webView respondsToSelector:modern]) {
+        ((void (*)(id, SEL, id))objc_msgSend)(self.webView, modern, ^{});
+    } else if ([self.webView respondsToSelector:legacy]) {
+        ((void (*)(id, SEL, id))objc_msgSend)(self.webView, legacy, ^{});
+    }
+    [self.webView evaluateJavaScript:@"document.querySelectorAll('video,audio').forEach(function(m){try{m.pause();}catch(e){}});" completionHandler:nil];
+}
+
 - (void)close {
+    [self pauseMedia];
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
