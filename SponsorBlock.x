@@ -11,7 +11,6 @@ static NSString *sbLastVideoID;
 static NSString *sbMarkerVideoID;
 static double sbMarkerDuration;
 static NSHashTable *sbBarViews;
-static const NSInteger kSBMarkerTag = 9911;
 
 static void SBRefreshMarkers(void) {
     for (UIView *view in sbBarViews.allObjects) [view setNeedsLayout];
@@ -285,31 +284,45 @@ static UIColor *SBCategoryColor(NSString *category) {
     return colors[category] ?: colors[@"sponsor"];
 }
 
-static void SBLayoutMarkers(UIView *barView, CGRect barFrame) {
-    UIView *overlay = [barView viewWithTag:kSBMarkerTag];
-    NSArray *segments = sbMarkerVideoID ? sbSegments[sbMarkerVideoID] : nil;
+static const char kSBMarkerLayerKey;
+static const char kSBMarkerStateKey;
 
-    if (!ytlBool(@"sponsorBlock") || !ytlBool(@"sbMarkers") || segments.count == 0 || sbMarkerDuration <= 0 || CGRectGetWidth(barFrame) <= 0) {
+static void SBLayoutMarkers(UIView *barView, CGRect barFrame) {
+    CALayer *overlay = objc_getAssociatedObject(barView, &kSBMarkerLayerKey);
+    NSArray *segments = sbMarkerVideoID ? sbSegments[sbMarkerVideoID] : nil;
+    BOOL visible = ytlBool(@"sponsorBlock") && ytlBool(@"sbMarkers") && segments.count > 0 && sbMarkerDuration > 0 && CGRectGetWidth(barFrame) > 0 && !barView.hidden;
+
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+
+    if (!visible) {
         overlay.hidden = YES;
+        [CATransaction commit];
         return;
     }
 
     if (!overlay) {
-        overlay = [[UIView alloc] initWithFrame:CGRectZero];
-        overlay.tag = kSBMarkerTag;
-        overlay.userInteractionEnabled = NO;
-        overlay.backgroundColor = [UIColor clearColor];
-        [barView addSubview:overlay];
+        overlay = [CALayer layer];
+        overlay.zPosition = 50;
+        overlay.masksToBounds = YES;
+        [barView.layer addSublayer:overlay];
+        objc_setAssociatedObject(barView, &kSBMarkerLayerKey, overlay, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 
     CGFloat height = MAX(CGRectGetHeight(barFrame), 3.0);
-    overlay.frame = CGRectMake(CGRectGetMinX(barFrame), CGRectGetMidY(barFrame) - height / 2, CGRectGetWidth(barFrame), height);
+    CGRect frame = CGRectMake(CGRectGetMinX(barFrame), CGRectGetMidY(barFrame) - height / 2, CGRectGetWidth(barFrame), height);
+    if (!CGRectEqualToRect(overlay.frame, frame)) overlay.frame = frame;
     overlay.hidden = NO;
-    [barView bringSubviewToFront:overlay];
 
     NSArray *enabled = SBEnabledCategories();
-    for (CALayer *layer in [overlay.layer.sublayers copy]) [layer removeFromSuperlayer];
+    NSString *state = [NSString stringWithFormat:@"%@|%.2f|%.1f|%.1f|%lu|%@", sbMarkerVideoID, sbMarkerDuration, CGRectGetWidth(frame), height, (unsigned long)segments.count, [enabled componentsJoinedByString:@","]];
+    if ([objc_getAssociatedObject(barView, &kSBMarkerStateKey) isEqualToString:state]) {
+        [CATransaction commit];
+        return;
+    }
+    objc_setAssociatedObject(barView, &kSBMarkerStateKey, state, OBJC_ASSOCIATION_COPY_NONATOMIC);
 
+    overlay.sublayers = nil;
     for (NSDictionary *segment in segments) {
         if (![enabled containsObject:segment[@"category"]]) continue;
         double start = MAX(0, [segment[@"start"] doubleValue]) / sbMarkerDuration;
@@ -318,9 +331,11 @@ static void SBLayoutMarkers(UIView *barView, CGRect barFrame) {
 
         CALayer *layer = [CALayer layer];
         layer.backgroundColor = [SBCategoryColor(segment[@"category"]) colorWithAlphaComponent:0.9].CGColor;
-        layer.frame = CGRectMake(floor(start * CGRectGetWidth(barFrame)), 0, MAX(2.0, ceil((end - start) * CGRectGetWidth(barFrame))), height);
-        [overlay.layer addSublayer:layer];
+        layer.frame = CGRectMake(floor(start * CGRectGetWidth(frame)), 0, MAX(2.0, ceil((end - start) * CGRectGetWidth(frame))), height);
+        [overlay addSublayer:layer];
     }
+
+    [CATransaction commit];
 }
 
 @interface YTModularPlayerBarView : UIView
