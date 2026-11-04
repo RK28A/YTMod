@@ -174,7 +174,9 @@ def main():
 
     for cls, sel, src, line in hooks:
         status = resolve(classes, cls, sel)
-        if status == "missing" or (status == "unknown" and runtime_class(classes, cls) not in classes):
+        uikit = {"-layoutSubviews", "-setFrame:", "-titleLabel", "-setHidden:", "-cellForItemAtIndexPath:", "-viewDidAppear:", "-viewWillDisappear:", "-viewDidLoad", "-didMoveToWindow", "-setImage:", "-setBackgroundColor:"}
+        inherited = status == "system" and runtime_class(classes, cls) in classes and sel not in uikit
+        if status == "missing" or inherited or (status == "unknown" and runtime_class(classes, cls) not in classes):
             report["missing_methods"].append({"class": cls, "selector": sel, "file": src, "line": line, "status": status})
 
     seen = set()

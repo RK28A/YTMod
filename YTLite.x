@@ -742,7 +742,16 @@ void autoSkipShorts(YTPlayerViewController *self, YTSingleVideoController *video
 %hook YTPlayerViewController
 - (void)loadWithPlayerTransition:(id)arg1 playbackConfig:(id)arg2 {
     %orig;
+    [self ytl_scheduleAutoActions];
+}
 
+- (void)playbackController:(id)controller didActivateVideo:(id)video withPlaybackData:(id)data {
+    %orig;
+    [self ytl_scheduleAutoActions];
+}
+
+%new
+- (void)ytl_scheduleAutoActions {
     NSArray *selectors = @[@"autoQuality", @"autoFullscreen", @"shortsToRegular", @"setAutoSpeed", @"turnOffCaptions"];
     for (NSString *selector in selectors) {
         [NSObject cancelPreviousPerformRequestsWithTarget:self selector:NSSelectorFromString(selector) object:nil];
@@ -904,6 +913,16 @@ void autoSkipShorts(YTPlayerViewController *self, YTSingleVideoController *video
 // Exit Fullscreen on Finish
 %hook YTWatchFlowController
 - (BOOL)shouldExitFullScreenOnFinish { return ytlBool(@"exitFullscreen") ? YES : %orig; }
+%end
+
+%hook YTPlayerOverlayManager
+- (void)varispeedSwitchController:(id)controller didSelectRate:(float)rate {
+    %orig;
+
+    if (ytlBool(@"rememberPlaybackSpeed") && rate > 0 && rate <= 16) {
+        [[YTLUserDefaults standardUserDefaults] setFloat:rate forKey:@"lastPlaybackRate"];
+    }
+}
 %end
 
 %hook YTMainAppVideoPlayerOverlayViewController

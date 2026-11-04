@@ -190,6 +190,7 @@ static inline BOOL YTLSetValue(id object, id value, NSString *key) {
 - (void)autoQuality;
 - (void)play;
 - (void)pause;
+- (void)ytl_scheduleAutoActions;
 @end
 
 @interface YTPlayerView : UIView

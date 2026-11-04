@@ -98,7 +98,7 @@ static void SBFetch(NSString *videoID) {
 
         dispatch_async(dispatch_get_main_queue(), ^{
             [sbPending removeObject:videoID];
-            if (data || status == 404) sbSegments[videoID] = segments;
+            sbSegments[videoID] = segments;
             if ([videoID isEqualToString:sbMarkerVideoID]) SBRefreshMarkers();
         });
     }] resume];
