@@ -202,7 +202,7 @@ static NSInteger YTLComputeElementDecision(YTIElementRenderer *renderer) {
     if (data.length == 0) return 0;
 
     if (noAds) {
-        static const char *ads[] = {"brand_promo", "product_carousel", "product_engagement_panel", "product_item", "text_search_ad", "text_image_button_layout", "carousel_headered_layout", "carousel_footered_layout", "square_image_layout", "landscape_image_wide_button_layout", "feed_ad_metadata", "full_width_square_image_layout", "full_width_portrait_image_layout", "video_display_full_layout", "video_display_full_buttoned_layout", "video_display_button_group_layout", "compact_promoted_item", "in_feed_ad", "ad_slot_renderer", "shopping_carousel", "shopping_item_card_list", "statement_banner", "masthead_ad", "promoted_sparkles", "_ad_with_", "shorts_ad", "reels_ad", "player_overlay_ad", "ads_info", NULL};
+        static const char *ads[] = {"brand_promo", "product_carousel", "product_engagement_panel", "product_item", "text_search_ad", "text_image_button_layout", "carousel_headered_layout", "carousel_footered_layout", "square_image_layout", "landscape_image_wide_button_layout", "feed_ad_metadata", "full_width_square_image_layout", "full_width_portrait_image_layout", "video_display_full_layout", "video_display_full_buttoned_layout", "video_display_button_group_layout", "compact_promoted_item", "in_feed_ad", "ad_slot_renderer", "shopping_carousel", "shopping_item_card_list", "statement_banner", "masthead_ad", "promoted_sparkles", "shorts_ad", "reels_ad", NULL};
         for (int i = 0; ads[i]; i++) {
             if (YTLDataContains(data, ads[i])) return 1;
         }
@@ -217,8 +217,21 @@ static NSInteger YTLComputeElementDecision(YTIElementRenderer *renderer) {
     return 0;
 }
 
+static const char kYTLFeedElementKey;
+
+static void YTLMarkFeedElement(id renderer) {
+    if (renderer && !objc_getAssociatedObject(renderer, &kYTLFeedElementKey)) objc_setAssociatedObject(renderer, &kYTLFeedElementKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+static BOOL YTLIsFeedElement(id renderer) {
+    return renderer && objc_getAssociatedObject(renderer, &kYTLFeedElementKey) != nil;
+}
+
 static NSInteger YTLElementDecision(YTIElementRenderer *renderer) {
     if (!renderer) return 0;
+    if (!YTLIsFeedElement(renderer)) {
+        return (ytlBool(@"noAds") && renderer.hasCompatibilityOptions && renderer.compatibilityOptions.hasAdLoggingData) ? 2 : 0;
+    }
     NSNumber *cached = objc_getAssociatedObject(renderer, &kYTLElementDecisionKey);
     NSUInteger packed = cached.unsignedIntegerValue;
     if (cached && (packed >> 2) == ytlSettingsGeneration) return packed & 3;
@@ -250,7 +263,9 @@ static BOOL YTLItemShouldHide(id item) {
         id content = YTLValue(YTLValue(item, @"richItemRenderer"), @"content");
         if (YTLHasFlag(content, @selector(hasElementRenderer))) renderer = YTLValue(content, @"elementRenderer");
     }
-    return [renderer isKindOfClass:rendererClass] && YTLElementDecision(renderer) != 0;
+    if (![renderer isKindOfClass:rendererClass]) return NO;
+    YTLMarkFeedElement(renderer);
+    return YTLElementDecision(renderer) != 0;
 }
 
 static void YTLFilterSections(NSMutableArray *sections) {
