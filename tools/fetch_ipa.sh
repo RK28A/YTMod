@@ -13,7 +13,7 @@ case "$url" in
     id="${url#*file/d/}"; id="${id%%/*}"; id="${id%%\?*}"
     url="https://drive.usercontent.google.com/download?id=$id&export=download&confirm=t"
     ;;
-  *drive.google.com/*id=*)
+  *drive.google.com/*id=*|*drive.usercontent.google.com/*id=*)
     id="${url#*id=}"; id="${id%%&*}"
     url="https://drive.usercontent.google.com/download?id=$id&export=download&confirm=t"
     ;;
@@ -26,8 +26,28 @@ case "$url" in
     ;;
 esac
 
+jar="$(mktemp)"
+
+google_confirm_url() {
+  python3 - "$1" <<'PY'
+import html, re, sys, urllib.parse
+page = open(sys.argv[1], encoding="utf-8", errors="ignore").read()
+form = re.search(r'<form[^>]*id="download-form"[^>]*action="([^"]+)"[^>]*>(.*?)</form>', page, re.S) or re.search(r'<form[^>]*action="([^"]*drive\.usercontent\.google\.com[^"]*)"[^>]*>(.*?)</form>', page, re.S)
+if not form:
+    sys.exit(1)
+fields = dict((html.unescape(n), html.unescape(v)) for n, v in re.findall(r'<input[^>]*name="([^"]+)"[^>]*value="([^"]*)"', form.group(2)))
+print(html.unescape(form.group(1)) + "?" + urllib.parse.urlencode(fields))
+PY
+}
+
 attempt_curl() {
-  curl -fsSL --retry 3 --retry-delay 3 --retry-all-errors --connect-timeout 30 -A "$ua" -H "Accept: */*" -o "$out" "$url"
+  curl -fsSL --retry 3 --retry-delay 3 --retry-all-errors --connect-timeout 30 -A "$ua" -H "Accept: */*" -b "$jar" -c "$jar" -o "$out" "$url" || return 1
+  if [ "$(head -c 2 "$out" 2>/dev/null)" != "PK" ] && grep -qiE 'download-form|drive\.usercontent\.google\.com' "$out" 2>/dev/null; then
+    confirm="$(google_confirm_url "$out")" || return 0
+    echo "Google Drive large file warning, confirming download"
+    url="$confirm"
+    curl -fsSL --retry 3 --retry-delay 3 --retry-all-errors --connect-timeout 30 -A "$ua" -b "$jar" -c "$jar" -o "$out" "$url"
+  fi
 }
 
 attempt_curl_plain() {
@@ -55,6 +75,11 @@ case "$code" in
   401|403) [[ "$url" == *pixeldrain.com* ]] && echo "Pixeldrain refuses the download: the free download limit of this file is reached or GitHub servers are blocked. Upload the IPA somewhere else (Dropbox with dl=1, Google Drive shared publicly, or a GitHub release)."
     echo "The server refuses the download. Use a direct, public link (no login, not expired): e.g. a GitHub release asset, Dropbox with dl=1, or a fresh link from your host." ;;
   404) echo "The file was not found at this address." ;;
-  200) echo "The link opens a web page instead of the file. Use the direct download link of the IPA." ;;
+  200)
+    if [[ "$url" == *google* ]] && grep -qiE 'accounts\.google\.com|ServiceLogin|Request access|Demander l' "$out" 2>/dev/null; then
+      echo "Google Drive asks to sign in: share the file as 'Anyone with the link' (Tous les utilisateurs disposant du lien)."
+    else
+      echo "The link opens a web page instead of the file. Use the direct download link of the IPA."
+    fi ;;
 esac
 exit 1
