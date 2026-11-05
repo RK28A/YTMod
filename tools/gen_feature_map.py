@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCES = ["YTLite.x", "YTNativeShare.x", "SponsorBlock.x", "Downloads.x", "HomeFilter.x", "SiteSwitch.x"]
+SOURCES = ["YTLite.x", "YTNativeShare.x", "SponsorBlock.x", "Downloads.x", "HomeFilter.x", "SleepTimer.x", "Theme.x", "SiteSwitch.x"]
 
 
 def selector(signature):

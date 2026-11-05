@@ -58,7 +58,8 @@ static NSMutableDictionary <NSString *, NSNumber *> *valueCache;
         @"downloadButton": @YES,
         @"homeFilterBar": @YES,
         @"skipAdShorts": @YES,
-        @"siteSwitch": @YES
+        @"siteSwitch": @YES,
+        @"sleepTimer": @YES
     }];
 }
 
