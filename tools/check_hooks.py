@@ -117,6 +117,8 @@ def parse_sources():
             for m in re.finditer(r'%c\((\w+)\)|NSClassFromString\(@"(\w+)"\)|objc_lookUpClass\("(\w+)"\)', line):
                 cls = next(g for g in m.groups() if g)
                 classes.add((cls, name, lineno))
+                if "// legacy" in line:
+                    LEGACY.add(cls)
     return hooks, classes
 
 
@@ -189,7 +191,7 @@ def main():
         legacy = item["class"] in LEGACY or (item["class"], item.get("selector")) in LEGACY_METHODS
         if args.github:
             level = "notice" if legacy else "warning"
-            print("::%s file=%s,line=%d::%s%s" % (level, item["file"], item["line"], msg, " (legacy hook, replaced on this version)" if legacy else ""))
+            print("::%s file=%s,line=%d::%s%s" % (level, item["file"], item["line"], msg, " (legacy hook, only for older YouTube versions)" if legacy else ""))
         else:
             print(("[legacy] " if legacy else "") + msg)
 
