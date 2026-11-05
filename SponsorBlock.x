@@ -7,6 +7,7 @@ static NSString *const kSBServer = @"https://sponsor.ajay.app";
 static NSMutableDictionary <NSString *, NSArray <NSDictionary *> *> *sbSegments;
 static NSMutableSet <NSString *> *sbPending;
 static NSMutableSet <NSString *> *sbSkipped;
+static NSMutableSet <NSString *> *sbIgnored;
 static NSString *sbLastVideoID;
 static NSString *sbMarkerVideoID;
 static double sbMarkerDuration;
@@ -165,6 +166,8 @@ static void SBVote(NSDictionary *segment, NSInteger type) {
     }] resume];
 }
 
+static void SBUpdateSkipButton(YTPlayerViewController *player, NSDictionary *segment);
+
 static void SBPresentSegmentMenu(YTPlayerViewController *player, NSDictionary *segment, BOOL skipped) {
     if (!segment) return;
     UIViewController *presenter = [YTLClass(@"YTUIUtils") topViewControllerForPresenting];
@@ -178,7 +181,8 @@ static void SBPresentSegmentMenu(YTPlayerViewController *player, NSDictionary *s
         }]];
     }
     [sheet addAction:[YTLClass(@"YTActionSheetAction") actionWithTitle:LOC(@"SBVoteDown") iconImage:[UIImage systemImageNamed:@"hand.thumbsdown"] style:0 handler:^{
-        [sbSkipped addObject:segment[@"uuid"]];
+        [sbIgnored addObject:segment[@"uuid"]];
+        SBUpdateSkipButton(player, nil);
         if (skipped) SBSeek(player, [segment[@"start"] doubleValue]);
         SBVote(segment, 0);
     }]];
@@ -342,6 +346,7 @@ static void SBHandleTime(YTPlayerViewController *player, double time) {
     if (![videoID isEqualToString:sbLastVideoID]) {
         sbLastVideoID = videoID;
         [sbSkipped removeAllObjects];
+        [sbIgnored removeAllObjects];
         if (sbSegments.count > 50) [sbSegments removeAllObjects];
     }
 
@@ -356,11 +361,12 @@ static void SBHandleTime(YTPlayerViewController *player, double time) {
     for (NSDictionary *segment in segments) {
         double start = [segment[@"start"] doubleValue], end = [segment[@"end"] doubleValue];
         if (time < start) break;
-        if (time >= end - 0.35 || [sbSkipped containsObject:segment[@"uuid"]]) continue;
+        if (time >= end - 0.35 || [sbIgnored containsObject:segment[@"uuid"]]) continue;
 
         NSInteger mode = YTLSponsorBlockMode(segment[@"category"]);
         if (mode == 0) continue;
-        if (mode == 2 || end - start > kSBLongSegment) {
+        BOOL autoSkip = mode == 1 && end - start <= kSBLongSegment && ![sbSkipped containsObject:segment[@"uuid"]];
+        if (!autoSkip) {
             if (!manual) manual = segment;
             continue;
         }
@@ -422,25 +428,22 @@ static UIColor *SBCategoryColor(NSString *category) {
 
 static const char kSBMarkerLayerKey;
 static const char kSBMarkerStateKey;
-static const char kSBShortsBarKey;
 
-static BOOL SBIsShortsBar(UIView *barView) {
-    NSNumber *cached = objc_getAssociatedObject(barView, &kSBShortsBarKey);
-    if (cached) return cached.boolValue;
-    if (!barView.window) return YES;
-    BOOL shorts = NO;
-    for (UIView *view = barView.superview; view && !shorts; view = view.superview) {
+static BOOL SBIsWatchBar(UIView *barView) {
+    if (!barView.window) return NO;
+    Class watchClass = NSClassFromString(@"YTWatchView");
+    for (UIView *view = barView.superview; view; view = view.superview) {
         NSString *name = NSStringFromClass([view class]);
-        shorts = [name rangeOfString:@"Reel"].location != NSNotFound || [name rangeOfString:@"Shorts"].location != NSNotFound;
+        if ([name rangeOfString:@"Reel"].location != NSNotFound || [name rangeOfString:@"Shorts"].location != NSNotFound) return NO;
+        if (watchClass && [view isKindOfClass:watchClass]) return YES;
     }
-    objc_setAssociatedObject(barView, &kSBShortsBarKey, @(shorts), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    return shorts;
+    return watchClass == nil;
 }
 
 static void SBLayoutMarkers(UIView *barView, CGRect barFrame) {
     CALayer *overlay = objc_getAssociatedObject(barView, &kSBMarkerLayerKey);
     NSArray *segments = sbMarkerVideoID ? sbSegments[sbMarkerVideoID] : nil;
-    BOOL visible = ytlBool(@"sponsorBlock") && ytlBool(@"sbMarkers") && segments.count > 0 && sbMarkerDuration > 0 && CGRectGetWidth(barFrame) > 0 && !barView.hidden && !SBIsShortsBar(barView);
+    BOOL visible = ytlBool(@"sponsorBlock") && ytlBool(@"sbMarkers") && segments.count > 0 && sbMarkerDuration > 0 && CGRectGetWidth(barFrame) > 0 && !barView.hidden && SBIsWatchBar(barView);
 
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
@@ -509,6 +512,7 @@ static void SBLayoutMarkers(UIView *barView, CGRect barFrame) {
     sbSegments = [NSMutableDictionary dictionary];
     sbPending = [NSMutableSet set];
     sbSkipped = [NSMutableSet set];
+    sbIgnored = [NSMutableSet set];
     sbBarViews = [NSHashTable weakObjectsHashTable];
     SBMigrateModes();
 
