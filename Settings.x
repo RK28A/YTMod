@@ -862,7 +862,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         @[@"GroupAdsBlocker", @[@"general", @"sponsorBlock", @"feedMenu"]],
         @[@"GroupAppearance", @[@"themeMenu", @"navbar", @"tabbar"]],
         @[@"GroupPlayback", @[@"player", @"overlay", @"shorts", @"sleepTimerItem", @"speed", @"autoSpeed", @"wifiQuality", @"cellQuality", @"startup"]],
-        @[@"GroupTools", @[@"downloadsMenu", @"other"]],
+        @[@"GroupTools", @[@"siteMenu", @"downloadsMenu", @"other"]],
         @[@"GroupAbout", @[@"version"]]
     ];
     for (NSArray *group in groups) {
