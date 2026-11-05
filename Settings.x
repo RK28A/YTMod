@@ -289,7 +289,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
 %new
 - (void)ytl_pushSitesWithSettings:(YTSettingsViewController *)settingsViewController {
     Class itemClass = YTLClass(@"YTSettingsSectionItem");
-    NSMutableArray <YTSettingsSectionItem *> *rows = [NSMutableArray arrayWithObject:[self switchWithTitle:@"SiteSwitch" key:@"siteSwitch"]];
+    NSMutableArray <YTSettingsSectionItem *> *rows = [NSMutableArray arrayWithObjects:[self switchWithTitle:@"SiteSwitch" key:@"siteSwitch"], [self switchWithTitle:@"SiteAdBlock" key:@"siteAdBlock"], nil];
 
     void (^editSite)(NSString *, NSInteger) = ^(NSString *current, NSInteger index) {
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:index < 0 ? LOC(@"SiteAdd") : LOC(@"SiteURL") message:nil preferredStyle:UIAlertControllerStyleAlert];
@@ -477,7 +477,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             return YES;
         }];
 
-    [sectionItems addObject:siteMenu];
+    ytlItems[@"siteMenu"] = siteMenu;
 
     YTSettingsSectionItem *themeMenu = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Theme")
         accessibilityIdentifier:@"YTLiteSectionItem"
@@ -939,7 +939,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         @[@"GroupAdsBlocker", @[@"general", @"sponsorBlock", @"feedMenu"]],
         @[@"GroupAppearance", @[@"themeMenu", @"navbar", @"tabbar"]],
         @[@"GroupPlayback", @[@"player", @"overlay", @"shorts", @"sleepTimerItem", @"speed", @"autoSpeed", @"wifiQuality", @"cellQuality", @"startup"]],
-        @[@"GroupTools", @[@"downloadsMenu", @"other"]],
+        @[@"GroupTools", @[@"siteMenu", @"downloadsMenu", @"other"]],
         @[@"GroupAbout", @[@"version"]]
     ];
     for (NSArray *group in groups) {

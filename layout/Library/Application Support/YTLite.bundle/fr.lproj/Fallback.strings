@@ -206,3 +206,5 @@
 "PresetSnow" = "Neige";
 "PresetRain" = "Pluie";
 "PresetNight" = "Nuit étoilée";
+"SiteAdBlock" = "Bloquer les pubs et popups";
+"SiteAdBlockDesc" = "Bloque les régies pub, les popups et les redirections vers des sites de pub sur les sites web. Rouvre le site pour appliquer";

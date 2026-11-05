@@ -350,6 +350,108 @@ static UIImage *YTLYouTubeIcon(void) {
     return [[UIImage systemImageNamed:@"play.rectangle.fill" withConfiguration:config] imageWithTintColor:[UIColor colorWithRed:1.0 green:0.0 blue:0.2 alpha:1.0] renderingMode:UIImageRenderingModeAlwaysOriginal];
 }
 
+#pragma mark - Ad blocker
+
+static NSArray <NSString *> *YTLAdHosts(void) {
+    static NSArray *hosts;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        hosts = @[
+            @"doubleclick.net", @"googlesyndication.com", @"googleadservices.com", @"adservice.google.com", @"googletagservices.com", @"pagead2.googlesyndication.com",
+            @"amazon-adsystem.com", @"adnxs.com", @"criteo.com", @"criteo.net", @"pubmatic.com", @"rubiconproject.com", @"openx.net", @"casalemedia.com",
+            @"taboola.com", @"outbrain.com", @"revcontent.com", @"mgid.com", @"smartadserver.com", @"teads.tv", @"33across.com", @"yieldmo.com", @"sharethrough.com",
+            @"popads.net", @"popcash.net", @"propellerads.com", @"propellerclick.com", @"onclickads.net", @"onclkds.com", @"adsterra.com", @"adsterratech.com",
+            @"exoclick.com", @"exosrv.com", @"juicyads.com", @"trafficjunky.net", @"trafficstars.com", @"hilltopads.net", @"a-ads.com", @"adcash.com", @"clickadu.com",
+            @"clickaine.com", @"adskeeper.com", @"adskeeper.co.uk", @"monetag.com", @"bidgear.com", @"ad-maven.com", @"admaven.com", @"pushame.com", @"pushwhy.com",
+            @"richpush.co", @"evadav.com", @"galaksion.com", @"zeroredirect1.com", @"zeroredirect2.com", @"highperformanceformat.com", @"profitabledisplaynetwork.com",
+            @"realsrv.com", @"tsyndicate.com", @"syndication.exdynsrv.com", @"magsrv.com", @"pemsrv.com", @"dolohen.com", @"adtng.com", @"aclib.net", @"acscdn.com",
+            @"bebi.com", @"wpadmngr.com", @"vidoomy.com", @"adform.net", @"seedtag.com", @"quantserve.com", @"scorecardresearch.com", @"moatads.com",
+            @"ads.yahoo.com", @"advertising.com", @"zedo.com", @"buysellads.com", @"carbonads.net", @"infolinks.com", @"media.net", @"yandexadexchange.net",
+            @"an.yandex.ru", @"mc.yandex.ru", @"adriver.ru", @"directadvert.ru", @"pushnami.com", @"onesignal.com"
+        ];
+    });
+    return hosts;
+}
+
+static BOOL YTLHostMatches(NSString *host, NSArray <NSString *> *domains) {
+    host = host.lowercaseString;
+    if (host.length == 0) return NO;
+    for (NSString *domain in domains) {
+        if ([host isEqualToString:domain] || [host hasSuffix:[@"." stringByAppendingString:domain]]) return YES;
+    }
+    return NO;
+}
+
+static BOOL YTLIsAuthHost(NSString *host) {
+    return YTLHostMatches(host, @[@"accounts.google.com", @"google.com", @"apple.com", @"appleid.apple.com", @"facebook.com", @"discord.com", @"twitter.com", @"x.com", @"github.com", @"microsoftonline.com", @"live.com", @"twitch.tv", @"paypal.com"]);
+}
+
+static NSString *YTLRootDomain(NSString *host) {
+    NSArray *parts = [host.lowercaseString componentsSeparatedByString:@"."];
+    if (parts.count <= 2) return host.lowercaseString;
+    NSString *last2 = [[parts subarrayWithRange:NSMakeRange(parts.count - 2, 2)] componentsJoinedByString:@"."];
+    if ([@[@"co.uk", @"com.br", @"co.jp", @"com.au", @"co.in"] containsObject:last2] && parts.count > 2) {
+        return [[parts subarrayWithRange:NSMakeRange(parts.count - 3, 3)] componentsJoinedByString:@"."];
+    }
+    return last2;
+}
+
+static NSString *YTLAdRulesJSON(void) {
+    NSMutableArray *rules = [NSMutableArray array];
+    for (NSString *host in YTLAdHosts()) {
+        NSString *escaped = [host stringByReplacingOccurrencesOfString:@"." withString:@"\\."];
+        [rules addObject:@{
+            @"trigger": @{@"url-filter": [NSString stringWithFormat:@"^https?://([^/]+\\.)?%@[:/]", escaped], @"resource-type": @[@"script", @"image", @"style-sheet", @"raw", @"media", @"popup", @"font", @"svg-document"]},
+            @"action": @{@"type": @"block"}
+        }];
+        [rules addObject:@{
+            @"trigger": @{@"url-filter": [NSString stringWithFormat:@"^https?://([^/]+\\.)?%@[:/]", escaped], @"resource-type": @[@"document"], @"load-type": @[@"third-party"]},
+            @"action": @{@"type": @"block"}
+        }];
+    }
+    [rules addObject:@{
+        @"trigger": @{@"url-filter": @".*"},
+        @"action": @{@"type": @"css-display-none", @"selector": @"ins.adsbygoogle, iframe[src*='doubleclick.net'], iframe[src*='googlesyndication'], iframe[id^='google_ads_iframe'], div[id^='div-gpt-ad'], div[id^='taboola-'], div[class*='OUTBRAIN'], a[href*='/aff_c?'], a[href*='popads.net'], a[href*='adsterra'], a[href*='exoclick']"}
+    }];
+    NSData *data = [NSJSONSerialization dataWithJSONObject:rules options:0 error:nil];
+    return data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
+}
+
+static void YTLLoadAdRules(void (^completion)(WKContentRuleList *list)) {
+    static WKContentRuleList *cached;
+    if (cached) {
+        completion(cached);
+        return;
+    }
+    WKContentRuleListStore *store = [WKContentRuleListStore defaultStore];
+    NSString *identifier = @"ytmodulation-adblock-2";
+    [store lookUpContentRuleListForIdentifier:identifier completionHandler:^(WKContentRuleList *list, NSError *error) {
+        if (list) {
+            cached = list;
+            completion(list);
+            return;
+        }
+        NSString *json = YTLAdRulesJSON();
+        if (!json) return;
+        [store compileContentRuleListForIdentifier:identifier encodedContentRuleList:json completionHandler:^(WKContentRuleList *compiled, NSError *compileError) {
+            if (!compiled) return;
+            cached = compiled;
+            completion(compiled);
+        }];
+    }];
+}
+
+static NSString *const kYTLPopupGuardScript = @"(function(){"
+    "if(window.__ytlGuard)return;window.__ytlGuard=1;"
+    "var last=0;['touchend','click','keydown'].forEach(function(n){document.addEventListener(n,function(){last=Date.now();},true);});"
+    "var open=window.open;"
+    "window.open=function(u,n,f){if(Date.now()-last>1200)return null;return open.apply(window,arguments);};"
+    "document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('a[target=_blank]'):null;"
+    "if(!a)return;var h=a.getAttribute('href')||'';if(/^javascript:/i.test(h)){return;}"
+    "try{var u=new URL(h,location.href);var r=a.getBoundingClientRect();"
+    "if((r.width>=window.innerWidth*0.9&&r.height>=window.innerHeight*0.6)||getComputedStyle(a).opacity==='0'){e.preventDefault();e.stopImmediatePropagation();}}catch(x){}},true);"
+    "})();";
+
 #pragma mark - Site view controller
 
 @interface YTLSiteViewController : UIViewController <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler>
@@ -446,6 +548,9 @@ static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hos
     configuration.allowsPictureInPictureMediaPlayback = YES;
     configuration.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     configuration.websiteDataStore = [WKWebsiteDataStore defaultDataStore];
+    if (ytlBool(@"siteAdBlock")) {
+        [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:kYTLPopupGuardScript injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO]];
+    }
     if (!siteVisitedHosts) siteVisitedHosts = [NSMutableSet set];
     for (NSString *entry in YTLSiteList()) {
         NSString *host = YTLNormalizeSite(entry).host;
@@ -489,6 +594,14 @@ static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hos
     _webView.allowsBackForwardNavigationGestures = YES;
     _webView.navigationDelegate = self;
     _webView.UIDelegate = self;
+    if (ytlBool(@"siteAdBlock")) {
+        __weak WKWebView *weakWebView = _webView;
+        YTLLoadAdRules(^(WKContentRuleList *list) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [weakWebView.configuration.userContentController addContentRuleList:list];
+            });
+        });
+    }
     _webView.customUserAgent = [NSString stringWithFormat:@"Mozilla/5.0 (iPhone; CPU iPhone OS %@ like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/%@ Mobile/15E148 Safari/604.1", [[UIDevice currentDevice].systemVersion stringByReplacingOccurrencesOfString:@"." withString:@"_"], [UIDevice currentDevice].systemVersion];
     [self.view addSubview:_webView];
 
@@ -668,8 +781,46 @@ static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hos
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
+- (BOOL)isUserSiteHost:(NSString *)host {
+    NSString *root = YTLRootDomain(host);
+    if ([root isEqualToString:YTLRootDomain(self.webView.URL.host ?: self.siteURL.host)]) return YES;
+    for (NSString *entry in YTLSiteList()) {
+        NSString *siteHost = YTLNormalizeSite(entry).host;
+        if (siteHost && [YTLRootDomain(siteHost) isEqualToString:root]) return YES;
+    }
+    return NO;
+}
+
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
+    NSURL *url = navigationAction.request.URL;
+    NSString *host = url.host;
+    if (!ytlBool(@"siteAdBlock") || host.length == 0) {
+        decisionHandler(WKNavigationActionPolicyAllow);
+        return;
+    }
+    if (YTLHostMatches(host, YTLAdHosts())) {
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+    BOOL mainFrame = navigationAction.targetFrame.isMainFrame;
+    BOOL userClick = navigationAction.navigationType == WKNavigationTypeLinkActivated || navigationAction.navigationType == WKNavigationTypeFormSubmitted || navigationAction.navigationType == WKNavigationTypeBackForward || navigationAction.navigationType == WKNavigationTypeReload;
+    if (mainFrame && !userClick && webView.URL.host && ![self isUserSiteHost:host] && !YTLIsAuthHost(host) && [self isUserSiteHost:webView.URL.host]) {
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+    decisionHandler(WKNavigationActionPolicyAllow);
+}
+
 - (WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures {
     if (navigationAction.targetFrame) return nil;
+    NSString *popupHost = navigationAction.request.URL.host;
+    if (ytlBool(@"siteAdBlock")) {
+        if (popupHost.length == 0 || YTLHostMatches(popupHost, YTLAdHosts())) return nil;
+        if (!YTLIsAuthHost(popupHost) && ![self isUserSiteHost:popupHost]) {
+            if (navigationAction.navigationType == WKNavigationTypeLinkActivated) [webView loadRequest:navigationAction.request];
+            return nil;
+        }
+    }
     if (self.presentedViewController || !self.view.window) {
         if (navigationAction.request.URL) [webView loadRequest:navigationAction.request];
         return nil;

@@ -206,3 +206,5 @@
 "PresetSnow" = "Snow";
 "PresetRain" = "Rain";
 "PresetNight" = "Starry night";
+"SiteAdBlock" = "Block ads and popups";
+"SiteAdBlockDesc" = "Blocks ad networks, popups and redirects to ad sites on the websites. Restart the website to apply";
