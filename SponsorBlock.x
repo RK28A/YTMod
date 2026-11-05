@@ -286,11 +286,25 @@ static UIColor *SBCategoryColor(NSString *category) {
 
 static const char kSBMarkerLayerKey;
 static const char kSBMarkerStateKey;
+static const char kSBShortsBarKey;
+
+static BOOL SBIsShortsBar(UIView *barView) {
+    NSNumber *cached = objc_getAssociatedObject(barView, &kSBShortsBarKey);
+    if (cached) return cached.boolValue;
+    if (!barView.window) return YES;
+    BOOL shorts = NO;
+    for (UIView *view = barView.superview; view && !shorts; view = view.superview) {
+        NSString *name = NSStringFromClass([view class]);
+        shorts = [name rangeOfString:@"Reel"].location != NSNotFound || [name rangeOfString:@"Shorts"].location != NSNotFound;
+    }
+    objc_setAssociatedObject(barView, &kSBShortsBarKey, @(shorts), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return shorts;
+}
 
 static void SBLayoutMarkers(UIView *barView, CGRect barFrame) {
     CALayer *overlay = objc_getAssociatedObject(barView, &kSBMarkerLayerKey);
     NSArray *segments = sbMarkerVideoID ? sbSegments[sbMarkerVideoID] : nil;
-    BOOL visible = ytlBool(@"sponsorBlock") && ytlBool(@"sbMarkers") && segments.count > 0 && sbMarkerDuration > 0 && CGRectGetWidth(barFrame) > 0 && !barView.hidden;
+    BOOL visible = ytlBool(@"sponsorBlock") && ytlBool(@"sbMarkers") && segments.count > 0 && sbMarkerDuration > 0 && CGRectGetWidth(barFrame) > 0 && !barView.hidden && !SBIsShortsBar(barView);
 
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
