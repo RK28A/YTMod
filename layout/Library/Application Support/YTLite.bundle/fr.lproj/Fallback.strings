@@ -126,3 +126,17 @@
 "DownloadsMenu" = "Téléchargements & copie";
 "OLEDRestart" = "Redémarre l'app pour l'appliquer partout";
 "SBSkipLongButton" = "Passer : %@ (%ld min) ? ›";
+"GroupAdsBlocker" = "Bloqueur de pubs";
+"GroupAppearance" = "Apparence";
+"GroupPlayback" = "Lecture";
+"GroupTools" = "Outils";
+"GroupAbout" = "À propos";
+"SleepTimer" = "Minuteur de veille";
+"SleepTimerDesc" = "Appui long sur la roue crantée du lecteur pour le régler";
+"SleepTimerMenuDesc" = "Met la vidéo en pause après un délai ou à la fin de la vidéo";
+"SleepTimerDone" = "Minuteur : vidéo mise en pause";
+"SleepTimerEndOfVideo" = "À la fin de la vidéo";
+"SleepTimerLeft" = "%ld min restantes";
+"SleepTimerOff" = "Désactiver le minuteur";
+"SleepTimerSet" = "Minuteur : %ld min";
+"SleepTimerMinutes" = "%ld minutes";

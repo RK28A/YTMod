@@ -126,3 +126,17 @@
 "DownloadsMenu" = "Downloads & copy";
 "OLEDRestart" = "Restart the app to apply everywhere";
 "SBSkipLongButton" = "Skip %@ (%ld min)? ›";
+"GroupAdsBlocker" = "Ads Blocker";
+"GroupAppearance" = "Appearance";
+"GroupPlayback" = "Playback";
+"GroupTools" = "Tools";
+"GroupAbout" = "About";
+"SleepTimer" = "Sleep timer";
+"SleepTimerDesc" = "Long press the gear of the player to set it";
+"SleepTimerMenuDesc" = "Pauses the video after a delay or at the end of the video";
+"SleepTimerDone" = "Sleep timer: video paused";
+"SleepTimerEndOfVideo" = "At the end of the video";
+"SleepTimerLeft" = "%ld min left";
+"SleepTimerOff" = "Turn off the timer";
+"SleepTimerSet" = "Sleep timer: %ld min";
+"SleepTimerMinutes" = "%ld minutes";

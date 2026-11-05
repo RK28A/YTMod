@@ -3,6 +3,8 @@
 #import <AVFoundation/AVFoundation.h>
 
 static __weak YTPlayerViewController *ytlWatchPlayer;
+static __weak YTPlayerViewController *ytlShortsPlayer;
+static CFTimeInterval ytlWatchTick, ytlShortsTick;
 static const NSInteger kDownloadButtonTag = 998;
 static const long long kChunkSize = 10 * 1024 * 1024;
 
@@ -346,8 +348,20 @@ static void YTLDownloadThumbnail(NSString *videoID, UIViewController *presenter)
     attempt(0);
 }
 
+static YTPlayerViewController *YTLDownloadTarget(void) {
+    YTPlayerViewController *watch = ytlWatchPlayer, *shorts = ytlShortsPlayer;
+    BOOL shortsVisible = shorts.view.window != nil;
+    if (shortsVisible && (!watch.view.window || ytlShortsTick > ytlWatchTick)) return shorts;
+    return watch ?: shorts;
+}
+
+static BOOL YTLShortsOnScreen(void) {
+    YTPlayerViewController *shorts = ytlShortsPlayer;
+    return shorts.view.window && YTLDownloadTarget() == shorts;
+}
+
 void YTLPresentDownloadMenu(UIViewController *presenter) {
-    YTPlayerViewController *player = ytlWatchPlayer;
+    YTPlayerViewController *player = YTLDownloadTarget();
     NSString *videoID = player.contentVideoID;
     if (!player || !videoID.length || !presenter) {
         [[YTLClass(@"YTToastResponderEvent") eventWithMessage:LOC(@"StreamUnavailable") firstResponder:presenter] send];
@@ -374,8 +388,23 @@ void YTLPresentDownloadMenu(UIViewController *presenter) {
     [sheet presentFromViewController:presenter animated:YES completion:nil];
 }
 
+static BOOL YTLIsShortsPlayer(YTPlayerViewController *player) {
+    for (UIView *view = player.view.superview; view; view = view.superview) {
+        NSString *name = NSStringFromClass([view class]);
+        if ([name rangeOfString:@"Reel"].location != NSNotFound || [name rangeOfString:@"Shorts"].location != NSNotFound) return YES;
+    }
+    return NO;
+}
+
 static void YTLTrackPlayer(YTPlayerViewController *player) {
-    if (player.view.window && [player.view.superview isKindOfClass:NSClassFromString(@"YTWatchView")]) ytlWatchPlayer = player;
+    if (!player.view.window || [YTLValue(player, @"isPlayingAd") boolValue]) return;
+    if ([player.view.superview isKindOfClass:NSClassFromString(@"YTWatchView")]) {
+        ytlWatchPlayer = player;
+        ytlWatchTick = CACurrentMediaTime();
+    } else if (YTLIsShortsPlayer(player)) {
+        ytlShortsPlayer = player;
+        ytlShortsTick = CACurrentMediaTime();
+    }
 }
 
 %hook YTPlayerViewController
@@ -395,7 +424,8 @@ static void YTLTrackPlayer(YTPlayerViewController *player) {
     %orig;
 
     if (!ytlBool(@"downloadButton") || !self.headerView || [self.headerView viewWithTag:kDownloadButtonTag]) return;
-    if (![self.panelIdentifier.identifierString isEqualToString:@"video-description-ep-identifier"]) return;
+    NSString *panelID = self.panelIdentifier.identifierString;
+    if (![panelID isKindOfClass:[NSString class]] || [panelID rangeOfString:@"description"].location == NSNotFound) return;
 
     YTQTMButton *button = [YTLClass(@"YTQTMButton") iconButton];
     if (!button) return;
@@ -421,6 +451,35 @@ static void YTLTrackPlayer(YTPlayerViewController *player) {
 - (void)ytl_didTapDownload:(UIButton *)sender {
     UIViewController *presenter = [YTLClass(@"YTUIUtils") topViewControllerForPresenting];
     YTLPresentDownloadMenu(presenter);
+}
+%end
+
+static const char kYTLDownloadSheetKey;
+
+%hook YTDefaultSheetController
+- (void)presentFromViewController:(UIViewController *)controller animated:(BOOL)animated completion:(id)completion {
+    @try {
+        if (ytlBool(@"downloadButton") && !objc_getAssociatedObject(self, &kYTLDownloadSheetKey) && YTLShortsOnScreen()) {
+            BOOL videoMenu = NO;
+            NSArray *actions = [self respondsToSelector:@selector(actions)] ? [self performSelector:@selector(actions)] : nil;
+            for (id action in [actions isKindOfClass:[NSArray class]] ? actions : @[]) {
+                id identifier = YTLValue(action, @"_accessibilityIdentifier");
+                if ([identifier isKindOfClass:[NSString class]] && [@[@"1", @"3", @"5", @"12", @"31", @"58"] containsObject:identifier]) {
+                    videoMenu = YES;
+                    break;
+                }
+            }
+            if (videoMenu) {
+                objc_setAssociatedObject(self, &kYTLDownloadSheetKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                [self addAction:[YTLClass(@"YTActionSheetAction") actionWithTitle:LOC(@"Download") iconImage:YTLIcon(@"yt_outline_download_24pt") style:0 handler:^{
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        YTLPresentDownloadMenu([YTLClass(@"YTUIUtils") topViewControllerForPresenting]);
+                    });
+                }]];
+            }
+        }
+    } @catch (NSException *exception) {}
+    %orig;
 }
 %end
 

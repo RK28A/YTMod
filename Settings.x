@@ -4,6 +4,8 @@
 - (void)updateYTLiteSectionWithEntry:(id)entry;
 @end
 
+FOUNDATION_EXPORT NSString *YTLSleepTimerStatus(void);
+FOUNDATION_EXPORT void YTLPresentSleepTimerMenu(UIViewController *presenter);
 static const NSInteger YTLiteSection = 789;
 FOUNDATION_EXPORT NSArray <NSString *> *YTLSponsorBlockCategories(void);
 FOUNDATION_EXPORT NSInteger YTLSponsorBlockMode(NSString *category);
@@ -148,6 +150,17 @@ static void YTLRegisterInTweaksGroup(void) {
 %hook YTSettingsCell
 - (void)layoutSubviews {
     %orig;
+
+    if ([self.accessibilityIdentifier isEqualToString:@"YTLiteHeaderItem"]) {
+        UILabel *title = YTLValue(self, @"_titleLabel");
+        if ([title isKindOfClass:[UILabel class]]) {
+            title.font = [UIFont systemFontOfSize:13 weight:UIFontWeightBold];
+            title.textColor = [UIColor colorWithRed:0.75 green:0.50 blue:0.90 alpha:1.0];
+        }
+        YTTouchFeedbackController *headerFeedback = YTLValue(self, @"_touchFeedbackController");
+        headerFeedback.feedbackColor = [UIColor clearColor];
+        return;
+    }
 
     BOOL isYTLite = [self.accessibilityIdentifier isEqualToString:@"YTLiteSectionItem"];
     YTTouchFeedbackController *feedback = YTLValue(self, @"_touchFeedbackController");
@@ -322,6 +335,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
 %new(v@:@)
 - (void)updateYTLiteSectionWithEntry:(id)entry {
     NSMutableArray *sectionItems = [NSMutableArray array];
+    NSMutableDictionary <NSString *, YTSettingsSectionItem *> *ytlItems = [NSMutableDictionary dictionary];
     Class YTSettingsSectionItemClass = YTLClass(@"YTSettingsSectionItem");
     YTSettingsViewController *settingsViewController = YTLValue(self, @"_settingsViewControllerDelegate");
 
@@ -346,7 +360,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         return YES;
     }];
 
-    [sectionItems addObject:general];
+    ytlItems[@"general"] = general;
 
     YTSettingsSectionItem *(^sponsorBlockItem)(void) = ^YTSettingsSectionItem *(void) {
         return [YTSettingsSectionItemClass itemWithTitle:@"SponsorBlock"
@@ -363,7 +377,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
 
     YTSettingsSectionItem *sponsorBlock = sponsorBlockItem();
 
-    [sectionItems addObject:sponsorBlock];
+    ytlItems[@"sponsorBlock"] = sponsorBlock;
 
     YTSettingsSectionItem *feedMenu = [YTSettingsSectionItemClass itemWithTitle:LOC(@"FeedFilters")
         accessibilityIdentifier:@"YTLiteSectionItem"
@@ -385,7 +399,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             return YES;
         }];
 
-    [sectionItems addObject:feedMenu];
+    ytlItems[@"feedMenu"] = feedMenu;
 
     YTSettingsSectionItem *themeMenu = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Theme")
         accessibilityIdentifier:@"YTLiteSectionItem"
@@ -402,7 +416,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             return YES;
         }];
 
-    [sectionItems addObject:themeMenu];
+    ytlItems[@"themeMenu"] = themeMenu;
 
     YTSettingsSectionItem *downloadsMenu = [YTSettingsSectionItemClass itemWithTitle:LOC(@"DownloadsMenu")
         accessibilityIdentifier:@"YTLiteSectionItem"
@@ -423,7 +437,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             return YES;
         }];
 
-    [sectionItems addObject:downloadsMenu];
+    ytlItems[@"downloadsMenu"] = downloadsMenu;
 
 
     YTSettingsSectionItem *navbar = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Navbar")
@@ -453,7 +467,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         return YES;
     }];
 
-    [sectionItems addObject:navbar];
+    ytlItems[@"navbar"] = navbar;
 
     if (YES) {
         YTSettingsSectionItem *overlay = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Overlay")
@@ -483,7 +497,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             return YES;
         }];
 
-        [sectionItems addObject:overlay];
+        ytlItems[@"overlay"] = overlay;
 
         YTSettingsSectionItem *player = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Player")
         accessibilityIdentifier:@"YTLiteSectionItem"
@@ -493,6 +507,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
             NSArray <YTSettingsSectionItem *> *rows = @[
                 [self switchWithTitle:@"BackgroundPlayback" key:@"backgroundPlayback"],
+                [self switchWithTitle:@"SleepTimer" key:@"sleepTimer"],
                 [self switchWithTitle:@"Miniplayer" key:@"miniplayer"],
                 [self switchWithTitle:@"PortraitFullscreen" key:@"portraitFullscreen"],
                 [self switchWithTitle:@"CopyWithTimestamp" key:@"copyWithTimestamp"],
@@ -521,7 +536,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             return YES;
         }];
 
-        [sectionItems addObject:player];
+        ytlItems[@"player"] = player;
 
         YTSettingsSectionItem *shorts = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Shorts")
         accessibilityIdentifier:@"YTLiteSectionItem"
@@ -560,7 +575,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             return YES;
         }];
 
-        [sectionItems addObject:shorts];
+        ytlItems[@"shorts"] = shorts;
     }
 
     YTSettingsSectionItem *tabbar = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Tabbar")
@@ -585,7 +600,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         return YES;
     }];
 
-    [sectionItems addObject:tabbar];
+    ytlItems[@"tabbar"] = tabbar;
 
     if (YES) {
         YTSettingsSectionItem *other = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Other")
@@ -616,9 +631,8 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             return YES;
         }];
 
-        [sectionItems addObject:other];
+        ytlItems[@"other"] = other;
 
-        [sectionItems addObject:space];
 
         YTSettingsSectionItem *speed = [YTSettingsSectionItemClass itemWithTitle:LOC(@"HoldToSpeed")
         accessibilityIdentifier:@"YTLiteSectionItem"
@@ -646,7 +660,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             return YES;
         }];
 
-        [sectionItems addObject:speed];
+        ytlItems[@"speed"] = speed;
 
         YTSettingsSectionItem *autoSpeed = [YTSettingsSectionItemClass itemWithTitle:LOC(@"DefaultPlaybackRate")
         accessibilityIdentifier:@"YTLiteSectionItem"
@@ -673,7 +687,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             return YES;
         }];
 
-        [sectionItems addObject:autoSpeed];
+        ytlItems[@"autoSpeed"] = autoSpeed;
 
         YTSettingsSectionItem *wifiQuality = [YTSettingsSectionItemClass itemWithTitle:LOC(@"PlaybackQualityOnWiFi")
         accessibilityIdentifier:@"YTLiteSectionItem"
@@ -701,7 +715,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             return YES;
         }];
 
-        [sectionItems addObject:wifiQuality];
+        ytlItems[@"wifiQuality"] = wifiQuality;
 
         YTSettingsSectionItem *cellQuality = [YTSettingsSectionItemClass itemWithTitle:LOC(@"PlaybackQualityOnCellular")
         accessibilityIdentifier:@"YTLiteSectionItem"
@@ -729,7 +743,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             return YES;
         }];
 
-        [sectionItems addObject:cellQuality];
+        ytlItems[@"cellQuality"] = cellQuality;
 
         YTSettingsSectionItem *startup = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Startup")
         accessibilityIdentifier:@"YTLiteSectionItem"
@@ -768,10 +782,20 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             return YES;
         }];
 
-        [sectionItems addObject:startup];
+        ytlItems[@"startup"] = startup;
+
+        ytlItems[@"sleepTimerItem"] = [YTSettingsSectionItemClass itemWithTitle:LOC(@"SleepTimer")
+            titleDescription:LOC(@"SleepTimerMenuDesc")
+            accessibilityIdentifier:@"YTLiteSectionItem"
+            detailTextBlock:^NSString *() {
+                return YTLSleepTimerStatus();
+            }
+            selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
+                YTLPresentSleepTimerMenu(nil);
+                return YES;
+            }];
     }
     
-    [sectionItems addObject:space];
 
     YTSettingsSectionItem *version = [YTSettingsSectionItemClass itemWithTitle:LOC(@"Version")
         accessibilityIdentifier:@"YTLiteSectionItem"
@@ -825,7 +849,25 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         return YES;
     }];
 
-    [sectionItems addObject:version];
+    ytlItems[@"version"] = version;
+
+    NSArray <NSArray *> *groups = @[
+        @[@"GroupAdsBlocker", @[@"general", @"sponsorBlock", @"feedMenu"]],
+        @[@"GroupAppearance", @[@"themeMenu", @"navbar", @"tabbar"]],
+        @[@"GroupPlayback", @[@"player", @"overlay", @"shorts", @"sleepTimerItem", @"speed", @"autoSpeed", @"wifiQuality", @"cellQuality", @"startup"]],
+        @[@"GroupTools", @[@"downloadsMenu", @"other"]],
+        @[@"GroupAbout", @[@"version"]]
+    ];
+    for (NSArray *group in groups) {
+        NSMutableArray *groupItems = [NSMutableArray array];
+        for (NSString *name in group[1]) {
+            if (ytlItems[name]) [groupItems addObject:ytlItems[name]];
+        }
+        if (groupItems.count == 0) continue;
+        if (sectionItems.count) [sectionItems addObject:space];
+        [sectionItems addObject:[YTSettingsSectionItemClass itemWithTitle:[LOC(group[0]) uppercaseString] accessibilityIdentifier:@"YTLiteHeaderItem" detailTextBlock:nil selectBlock:nil]];
+        [sectionItems addObjectsFromArray:groupItems];
+    }
 
     BOOL isNew = [settingsViewController respondsToSelector:@selector(setSectionItems:forCategory:title:icon:titleDescription:headerHidden:)];
     YTIIcon *icon = [YTLClass(@"YTIIcon") new];

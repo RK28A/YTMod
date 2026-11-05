@@ -191,6 +191,16 @@ static BOOL YTLDataContains(NSData *data, const char *needle) {
     return data.length >= length && memmem(data.bytes, data.length, needle, length) != NULL;
 }
 
+static BOOL YTLDataIsPoll(NSData *data) {
+    static const char *polls[] = {"poll", "Poll", "quiz", "Quiz", NULL};
+    static const char *posts[] = {"post_", "backstage", "Backstage", "community", "Community", NULL};
+    BOOL poll = NO, post = NO;
+    for (int i = 0; polls[i] && !poll; i++) poll = YTLDataContains(data, polls[i]);
+    if (!poll) return NO;
+    for (int i = 0; posts[i] && !post; i++) post = YTLDataContains(data, posts[i]);
+    return post;
+}
+
 static NSInteger YTLComputeElementDecision(YTIElementRenderer *renderer) {
     BOOL noAds = ytlBool(@"noAds");
     if (noAds && renderer.hasCompatibilityOptions && renderer.compatibilityOptions.hasAdLoggingData) return 2;
@@ -213,7 +223,7 @@ static NSInteger YTLComputeElementDecision(YTIElementRenderer *renderer) {
         }
     }
 
-    if (hidePolls && (YTLDataContains(data, "poll") || YTLDataContains(data, "Poll"))) return 2;
+    if (hidePolls && YTLDataIsPoll(data)) return 2;
 
     if (hideShorts && !YTLDataContains(data, "history*")) {
         if (YTLDataContains(data, "shorts_shelf.eml") || YTLDataContains(data, "shorts_video_cell.eml") || YTLDataContains(data, "6Shorts")) return 2;
@@ -258,6 +268,47 @@ static BOOL YTLItemIsAd(id item) {
     return NO;
 }
 
+static BOOL YTLIsContainerField(NSString *name) {
+    return [name hasSuffix:@"Renderer"] || [name isEqualToString:@"content"] || [name isEqualToString:@"contentsArray"] || [name isEqualToString:@"itemsArray"] || [name isEqualToString:@"itemArray"];
+}
+
+static BOOL YTLNestedShouldHide(id message, NSUInteger depth) {
+    if (!message || depth > 6) return NO;
+    Class rendererClass = YTLClass(@"YTIElementRenderer");
+    if (rendererClass && [message isKindOfClass:rendererClass]) {
+        YTLMarkFeedElement(message);
+        return YTLElementDecision(message) != 0;
+    }
+    if (![message isKindOfClass:YTLClass(@"GPBMessage")] || ![[message class] respondsToSelector:@selector(descriptor)]) return NO;
+
+    id descriptor = ((id (*)(id, SEL))objc_msgSend)([message class], @selector(descriptor));
+    NSArray *fields = YTLValue(descriptor, @"fields");
+    if (![fields isKindOfClass:[NSArray class]]) return NO;
+
+    for (id field in fields) {
+        NSString *name = YTLValue(field, @"name");
+        if (![name isKindOfClass:[NSString class]] || !YTLIsContainerField(name)) continue;
+        if ([YTLValue(field, @"dataType") integerValue] != 15) continue;
+        NSInteger fieldType = [YTLValue(field, @"fieldType") integerValue];
+
+        if (fieldType == 1) {
+            NSMutableArray *array = YTLValue(message, name);
+            if (![array isKindOfClass:[NSMutableArray class]] || array.count == 0) continue;
+            NSIndexSet *hidden = [array indexesOfObjectsPassingTest:^BOOL(id child, NSUInteger idx, BOOL *stop) {
+                return YTLNestedShouldHide(child, depth + 1);
+            }];
+            if (hidden.count == 0) continue;
+            [array removeObjectsAtIndexes:hidden];
+            if (array.count == 0) return YES;
+        } else if (fieldType == 0) {
+            NSString *hasName = [NSString stringWithFormat:@"has%@%@", [[name substringToIndex:1] uppercaseString], [name substringFromIndex:1]];
+            if (!YTLHasFlag(message, NSSelectorFromString(hasName))) continue;
+            if (YTLNestedShouldHide(YTLValue(message, name), depth + 1)) return YES;
+        }
+    }
+    return NO;
+}
+
 static BOOL YTLItemShouldHide(id item) {
     if (!item) return NO;
     if (ytlBool(@"noAds") && YTLItemIsAd(item)) return YES;
@@ -268,7 +319,14 @@ static BOOL YTLItemShouldHide(id item) {
         id content = YTLValue(YTLValue(item, @"richItemRenderer"), @"content");
         if (YTLHasFlag(content, @selector(hasElementRenderer))) renderer = YTLValue(content, @"elementRenderer");
     }
-    if (![renderer isKindOfClass:rendererClass]) return NO;
+    if (![renderer isKindOfClass:rendererClass]) {
+        if (ytlBool(@"filterPolls") && YTLHasFlag(item, @selector(hasRichSectionRenderer))) {
+            @try {
+                return YTLNestedShouldHide(YTLValue(item, @"richSectionRenderer"), 0);
+            } @catch (NSException *exception) {}
+        }
+        return NO;
+    }
     YTLMarkFeedElement(renderer);
     return YTLElementDecision(renderer) != 0;
 }

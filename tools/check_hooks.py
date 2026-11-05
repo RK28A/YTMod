@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 LEGACY = set()
 LEGACY_METHODS = set()
-SOURCES = ["YTLite.x", "Settings.x", "YTNativeShare.x", "Sideloading.x", "SponsorBlock.x", "Downloads.x", "HomeFilter.x"]
+SOURCES = ["YTLite.x", "Settings.x", "YTNativeShare.x", "Sideloading.x", "SponsorBlock.x", "Downloads.x", "HomeFilter.x", "SleepTimer.x"]
 SYSTEM_PREFIXES = ("NS", "UI", "CA", "CK", "AV", "MP", "PH", "_UI", "WK", "SK")
 
 INTERFACE_RE = re.compile(r"^@interface (\w+)(?: \((\w*)\))?(?: : (\w+))?")
