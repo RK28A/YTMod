@@ -34,18 +34,54 @@ static NSArray <NSString *> *YTLDefaultSites(void) {
     return sites;
 }
 
+NSString *YTLSiteKey(NSString *entry) {
+    NSURL *url = YTLNormalizeSite(entry);
+    if (!url) return nil;
+    NSString *host = url.host.lowercaseString;
+    if ([host hasPrefix:@"www."]) host = [host substringFromIndex:4];
+    NSString *path = [url.path stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"/"]].lowercaseString ?: @"";
+    return path.length ? [NSString stringWithFormat:@"%@/%@", host, path] : host;
+}
+
+NSInteger YTLSiteIndex(NSArray <NSString *> *list, NSString *entry) {
+    NSString *key = YTLSiteKey(entry);
+    if (!key) return NSNotFound;
+    for (NSUInteger i = 0; i < list.count; i++) {
+        if ([YTLSiteKey(list[i]) isEqualToString:key]) return (NSInteger)i;
+    }
+    return NSNotFound;
+}
+
 NSArray <NSString *> *YTLSiteList(void) {
     YTLUserDefaults *defaults = [YTLUserDefaults standardUserDefaults];
-    NSArray *list = [defaults arrayForKey:@"siteList"];
-    if (!list) {
+    NSArray *saved = [defaults arrayForKey:@"siteList"];
+    NSMutableArray *list = [NSMutableArray array];
+    if (saved) {
+        [list addObjectsFromArray:saved];
+    } else {
         NSString *legacy = [defaults stringForKey:@"siteURL"];
-        NSMutableArray *initial = [YTLDefaultSites() mutableCopy];
-        if (legacy.length && ![initial containsObject:legacy]) [initial insertObject:legacy atIndex:0];
-        list = initial;
+        if (legacy.length) [list addObject:legacy];
     }
-    NSMutableArray *clean = [NSMutableArray array];
+
+    NSMutableArray <NSString *> *clean = [NSMutableArray array];
     for (id entry in list) {
-        if ([entry isKindOfClass:[NSString class]] && YTLNormalizeSite(entry) && ![clean containsObject:entry]) [clean addObject:entry];
+        if ([entry isKindOfClass:[NSString class]] && YTLSiteKey(entry) && YTLSiteIndex(clean, entry) == NSNotFound) [clean addObject:entry];
+    }
+
+    NSArray *seenValue = [defaults arrayForKey:@"siteDefaultsSeen"];
+    NSMutableSet <NSString *> *seen = [NSMutableSet setWithArray:[seenValue isKindOfClass:[NSArray class]] ? seenValue : @[]];
+    BOOL changed = NO;
+    for (NSString *entry in YTLDefaultSites()) {
+        NSString *key = YTLSiteKey(entry);
+        if (!key || [seen containsObject:key]) continue;
+        [seen addObject:key];
+        changed = YES;
+        if (YTLSiteIndex(clean, entry) == NSNotFound) [clean addObject:entry];
+    }
+
+    if (changed || (saved && clean.count != saved.count)) {
+        [defaults setObject:seen.allObjects forKey:@"siteDefaultsSeen"];
+        [defaults setObject:clean forKey:@"siteList"];
     }
     return clean;
 }
@@ -119,8 +155,14 @@ static void YTLPromptAddSite(void (^completion)(NSURL *url)) {
         NSURL *url = YTLNormalizeSite(value);
         if (!url) return;
         NSMutableArray *list = [YTLSiteList() mutableCopy];
-        if (![list containsObject:value]) [list addObject:value];
-        YTLSetSiteList(list);
+        NSInteger existing = YTLSiteIndex(list, value);
+        if (existing != NSNotFound) {
+            url = YTLNormalizeSite(list[existing]) ?: url;
+            [[YTLClass(@"YTToastResponderEvent") eventWithMessage:LOC(@"SiteDuplicate") firstResponder:presenter] send];
+        } else {
+            [list addObject:value];
+            YTLSetSiteList(list);
+        }
         if (completion) completion(url);
     }]];
     [presenter presentViewController:alert animated:YES completion:nil];

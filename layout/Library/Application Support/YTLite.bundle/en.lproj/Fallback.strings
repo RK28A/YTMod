@@ -136,3 +136,4 @@
 "SiteAdd" = "Add a website";
 "SiteRemove" = "Remove";
 "SBSkipLongButton" = "Skip %@ (%ld min)? ›";
+"SiteDuplicate" = "This website is already in the list";

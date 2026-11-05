@@ -9,6 +9,7 @@ FOUNDATION_EXPORT NSArray <NSString *> *YTLSponsorBlockCategories(void);
 FOUNDATION_EXPORT NSURL *YTLSiteURL(void);
 FOUNDATION_EXPORT NSArray <NSString *> *YTLSiteList(void);
 FOUNDATION_EXPORT void YTLSetSiteList(NSArray <NSString *> *list);
+FOUNDATION_EXPORT NSInteger YTLSiteIndex(NSArray <NSString *> *list, NSString *entry);
 FOUNDATION_EXPORT NSInteger YTLSponsorBlockMode(NSString *category);
 FOUNDATION_EXPORT void YTLSetSponsorBlockMode(NSString *category, NSInteger mode);
 
@@ -299,8 +300,14 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             NSString *value = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
             if (value.length == 0) return;
             NSMutableArray *list = [YTLSiteList() mutableCopy];
+            NSInteger existing = YTLSiteIndex(list, value);
+            if (existing == NSNotFound && YTLSiteIndex(@[value], value) == NSNotFound) return;
+            if (existing != NSNotFound && existing != index) {
+                [[YTLClass(@"YTToastResponderEvent") eventWithMessage:LOC(@"SiteDuplicate") firstResponder:settingsViewController] send];
+                return;
+            }
             if (index >= 0 && index < (NSInteger)list.count) list[index] = value;
-            else if (![list containsObject:value]) [list addObject:value];
+            else [list addObject:value];
             YTLSetSiteList(list);
             [settingsViewController reloadData];
         }]];
