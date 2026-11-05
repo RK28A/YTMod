@@ -585,11 +585,11 @@ static void YTLFilterSections(NSMutableArray *sections) {
 // Stick Sort Buttons in Comments Section
 - (BOOL)enableHideChipsInTheCommentsHeaderOnScrollIos { return ytlBool(@"stickSortComments") ? NO : %orig; }
 // Hide Sort Buttons in Comments Section
-- (BOOL)enableChipsInTheCommentsHeaderIos { return ytlBool(@"hideSortComments") ? NO : %orig; }
+- (BOOL)enableChipsInTheCommentsHeaderIos { return ytlBool(@"hideSortComments") ? NO : %orig; } // legacy
 // Use System Theme
-- (BOOL)shouldUseAppThemeSetting { return YES; }
+- (BOOL)shouldUseAppThemeSetting { return YES; } // legacy
 // Dismiss Panel By Swiping in Fullscreen Mode
-- (BOOL)isLandscapeEngagementPanelSwipeRightToDismissEnabled { return YES; }
+- (BOOL)isLandscapeEngagementPanelSwipeRightToDismissEnabled { return YES; } // legacy
 // Remove Video in Playlist By Swiping To The Right
 - (BOOL)enableSwipeToRemoveInPlaylistWatchEp { return YES; }
 // Enable Old-style Minibar For Playlist Panel
@@ -1183,7 +1183,7 @@ static BOOL YTLElementModelShouldHide(ASCollectionElement *element) {
     BOOL shouldRemove = NO;
 
     if (![cell isKindOfClass:objc_lookUpClass("_ASCollectionViewCell")]) {
-        shouldRemove = ([cell isKindOfClass:objc_lookUpClass("YTReelShelfCell")] && YTLHideShorts()) ||
+        shouldRemove = ([cell isKindOfClass:objc_lookUpClass("YTReelShelfCell")] && YTLHideShorts()) || // legacy
             ([cell isKindOfClass:objc_lookUpClass("YTHorizontalCardListCell")] && ytlBool(@"noContinueWatching"));
     }
 
@@ -1209,7 +1209,7 @@ static BOOL YTLElementModelShouldHide(ASCollectionElement *element) {
 
 // Shorts Progress Bar (https://github.com/PoomSmart/YTShortsProgress)
 %hook YTReelPlayerViewController
-- (BOOL)shouldEnablePlayerBar { return ytlBool(@"shortsProgress") ? YES : %orig; }
+- (BOOL)shouldEnablePlayerBar { return ytlBool(@"shortsProgress") ? YES : %orig; } // legacy
 - (BOOL)shouldAlwaysEnablePlayerBar { return ytlBool(@"shortsProgress") ? YES : %orig; }
 - (BOOL)shouldEnablePlayerBarOnlyOnPause { return ytlBool(@"shortsProgress") ? NO : %orig; }
 
@@ -1244,12 +1244,12 @@ static BOOL YTLElementModelShouldHide(ASCollectionElement *element) {
 
 %hook YTColdConfig
 - (BOOL)iosEnableVideoPlayerScrubber { return ytlBool(@"shortsProgress") ? YES : %orig; }
-- (BOOL)mobileShortsTabInlined { return ytlBool(@"shortsProgress") ? YES : %orig; }
-- (BOOL)iosUseSystemVolumeControlInFullscreen { return ytlBool(@"stockVolumeHUD") ? YES : %orig; }
+- (BOOL)mobileShortsTabInlined { return ytlBool(@"shortsProgress") ? YES : %orig; } // legacy
+- (BOOL)iosUseSystemVolumeControlInFullscreen { return ytlBool(@"stockVolumeHUD") ? YES : %orig; } // legacy
 %end
 
 %hook YTHotConfig
-- (BOOL)enablePlayerBarForVerticalVideoWhenControlsHiddenInFullscreen { return ytlBool(@"shortsProgress") ? YES : %orig; }
+- (BOOL)enablePlayerBarForVerticalVideoWhenControlsHiddenInFullscreen { return ytlBool(@"shortsProgress") ? YES : %orig; } // legacy
 %end
 
 // Dont Startup Shorts
@@ -1262,7 +1262,7 @@ static BOOL YTLElementModelShouldHide(ASCollectionElement *element) {
 - (void)setPausedStateCarouselVisible:(BOOL)arg1 animated:(BOOL)arg2 { ytlBool(@"hideShortsSubscriptions") ? %orig(NO, arg2) : %orig; }
 %end
 
-%hook YTReelWatchPlaybackOverlayView
+%hook YTReelWatchPlaybackOverlayView // legacy
 - (void)setReelLikeButton:(id)arg1 { if (!ytlBool(@"hideShortsLike")) %orig; }
 - (void)setReelDislikeButton:(id)arg1 { if (!ytlBool(@"hideShortsDislike")) %orig; }
 - (void)setViewCommentButton:(id)arg1 { if (!ytlBool(@"hideShortsComments")) %orig; }
