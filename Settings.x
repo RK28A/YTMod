@@ -5,6 +5,7 @@
 @end
 
 FOUNDATION_EXPORT NSString *YTLSleepTimerStatus(void);
+FOUNDATION_EXPORT void YTLPresentThemeEditor(void);
 FOUNDATION_EXPORT void YTLPresentSleepTimerMenu(UIViewController *presenter);
 static const NSInteger YTLiteSection = 789;
 FOUNDATION_EXPORT NSArray <NSString *> *YTLSponsorBlockCategories(void);
@@ -408,7 +409,13 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         }
         selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
             NSArray <YTSettingsSectionItem *> *rows = @[
-                [self switchWithTitle:@"OLEDMode" key:@"oledMode"]
+                [self switchWithTitle:@"OLEDMode" key:@"oledMode"],
+                [YTSettingsSectionItemClass itemWithTitle:LOC(@"CustomTheme") titleDescription:LOC(@"CustomThemeDesc") accessibilityIdentifier:@"YTLiteSectionItem" detailTextBlock:^NSString *() {
+                    return ytlBool(@"themeEnabled") ? @"‣" : LOC(@"Disabled");
+                } selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
+                    YTLPresentThemeEditor();
+                    return YES;
+                }]
             ];
 
             YTSettingsPickerViewController *picker = [[YTLClass(@"YTSettingsPickerViewController") alloc] initWithNavTitle:LOC(@"Theme") pickerSectionTitle:nil rows:[self availableRows:rows] selectedItemIndex:NSNotFound parentResponder:[self parentResponder]];

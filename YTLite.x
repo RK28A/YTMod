@@ -170,15 +170,25 @@ static UIColor *YTLOLEDColor(UIColor *color) {
     return white < 0.16 && alpha > 0.9 ? [UIColor blackColor] : color;
 }
 
+FOUNDATION_EXPORT UIColor *YTLThemePaletteColor(NSInteger level, BOOL dark);
+
 %hook YTCommonColorPalette
-- (UIColor *)baseBackground { return self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig; }
-- (UIColor *)background1 { return self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig; }
-- (UIColor *)background2 { return self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig; }
-- (UIColor *)background3 { return self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig; } // legacy
+- (UIColor *)baseBackground { return YTLThemePaletteColor(0, self.pageStyle == 1) ?: (self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig); }
+- (UIColor *)background1 { return YTLThemePaletteColor(1, self.pageStyle == 1) ?: (self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig); }
+- (UIColor *)background2 { return YTLThemePaletteColor(2, self.pageStyle == 1) ?: (self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig); }
+- (UIColor *)background3 { return YTLThemePaletteColor(3, self.pageStyle == 1) ?: (self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig); } // legacy
+- (UIColor *)brandBackgroundSolid { return YTLThemePaletteColor(1, self.pageStyle == 1) ?: %orig; }
+- (UIColor *)brandBackgroundPrimary { return YTLThemePaletteColor(1, self.pageStyle == 1) ?: %orig; }
 %end
 
 %hook YTTokensColorPalette
-- (UIColor *)baseBackground { return [YTLValue(self, @"pageStyle") integerValue] == 1 ? YTLOLEDColor(%orig) : %orig; }
+- (UIColor *)baseBackground {
+    BOOL dark = [YTLValue(self, @"pageStyle") integerValue] == 1;
+    return YTLThemePaletteColor(0, dark) ?: (dark ? YTLOLEDColor(%orig) : %orig);
+}
+- (UIColor *)menuBackground {
+    return YTLThemePaletteColor(3, [YTLValue(self, @"pageStyle") integerValue] == 1) ?: %orig;
+}
 %end
 
 static NSUInteger ytlSettingsGeneration = 1;
