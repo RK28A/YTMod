@@ -111,6 +111,8 @@ static NSString *SBCategoryName(NSString *category) {
 }
 
 static const NSInteger kSBSkipButtonTag = 9912;
+static const NSInteger kSBToastTag = 9913;
+static const double kSBLongSegment = 300;
 static NSDictionary *sbPendingSegment;
 static __weak YTPlayerViewController *sbButtonPlayer;
 
@@ -180,11 +182,54 @@ static void SBUpdateSkipButton(YTPlayerViewController *player, NSDictionary *seg
     if ([sbPendingSegment[@"uuid"] isEqual:segment[@"uuid"]] && !button.hidden) return;
     sbPendingSegment = segment;
 
-    [button setTitle:[NSString stringWithFormat:LOC(@"SBSkipButton"), SBCategoryName(segment[@"category"])] forState:UIControlStateNormal];
+    double length = [segment[@"end"] doubleValue] - [segment[@"start"] doubleValue];
+    NSString *title = length > kSBLongSegment
+        ? [NSString stringWithFormat:LOC(@"SBSkipLongButton"), SBCategoryName(segment[@"category"]), (long)round(length / 60)]
+        : [NSString stringWithFormat:LOC(@"SBSkipButton"), SBCategoryName(segment[@"category"])];
+    [button setTitle:title forState:UIControlStateNormal];
     [host bringSubviewToFront:button];
     button.alpha = 0;
     button.hidden = NO;
     [UIView animateWithDuration:0.2 animations:^{ button.alpha = 1; }];
+}
+
+static void SBShowCenterToast(YTPlayerViewController *player, NSString *message) {
+    UIView *host = player.view;
+    if (!host.window || message.length == 0) return;
+
+    UILabel *toast = (UILabel *)[host viewWithTag:kSBToastTag];
+    if (![toast isKindOfClass:[UILabel class]]) {
+        toast = [UILabel new];
+        toast.tag = kSBToastTag;
+        toast.translatesAutoresizingMaskIntoConstraints = NO;
+        toast.textColor = [UIColor whiteColor];
+        toast.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
+        toast.textAlignment = NSTextAlignmentCenter;
+        toast.numberOfLines = 2;
+        toast.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.75];
+        toast.layer.cornerRadius = 18;
+        toast.layer.masksToBounds = YES;
+        toast.userInteractionEnabled = NO;
+        [host addSubview:toast];
+        [NSLayoutConstraint activateConstraints:@[
+            [toast.centerXAnchor constraintEqualToAnchor:host.centerXAnchor],
+            [toast.centerYAnchor constraintEqualToAnchor:host.centerYAnchor],
+            [toast.widthAnchor constraintLessThanOrEqualToAnchor:host.widthAnchor multiplier:0.8],
+            [toast.heightAnchor constraintGreaterThanOrEqualToConstant:36]
+        ]];
+    }
+
+    toast.text = [NSString stringWithFormat:@"   %@   ", message];
+    [host bringSubviewToFront:toast];
+    [toast.layer removeAllAnimations];
+    toast.alpha = 0;
+    toast.hidden = NO;
+    [UIView animateWithDuration:0.2 animations:^{ toast.alpha = 1; } completion:^(BOOL finished) {
+        if (!finished) return;
+        [UIView animateWithDuration:0.3 delay:1.6 options:UIViewAnimationOptionBeginFromCurrentState animations:^{ toast.alpha = 0; } completion:^(BOOL done) {
+            if (done) toast.hidden = YES;
+        }];
+    }];
 }
 
 static void SBTrackMarkers(YTPlayerViewController *player, YTSingleVideoController *video) {
@@ -226,7 +271,7 @@ static void SBHandleTime(YTPlayerViewController *player, double time) {
 
         NSInteger mode = YTLSponsorBlockMode(segment[@"category"]);
         if (mode == 0) continue;
-        if (mode == 2) {
+        if (mode == 2 || end - start > kSBLongSegment) {
             if (!manual) manual = segment;
             continue;
         }
@@ -237,7 +282,7 @@ static void SBHandleTime(YTPlayerViewController *player, double time) {
 
         if (ytlBool(@"sbNotify")) {
             NSString *message = [NSString stringWithFormat:LOC(@"SBSkipped"), SBCategoryName(segment[@"category"])];
-            [[YTLClass(@"YTToastResponderEvent") eventWithMessage:message firstResponder:player] send];
+            SBShowCenterToast(player, message);
         }
         return;
     }
