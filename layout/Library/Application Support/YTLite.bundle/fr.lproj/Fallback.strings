@@ -140,3 +140,9 @@
 "SleepTimerOff" = "Désactiver le minuteur";
 "SleepTimerSet" = "Minuteur : %ld min";
 "SleepTimerMinutes" = "%ld minutes";
+"SBTapToUndo" = "Appuie pour annuler ou signaler";
+"SBUndoSkip" = "Revenir au segment";
+"SBVoteDown" = "Signaler : segment faux";
+"SBVoteUp" = "Bon segment";
+"SBVoteSent" = "Vote envoyé à SponsorBlock, merci";
+"SBVoteFailed" = "Impossible d'envoyer le vote";

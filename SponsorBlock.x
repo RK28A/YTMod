@@ -85,7 +85,8 @@ static void SBFetch(NSString *videoID) {
                             @"start": @(start),
                             @"end": @(end),
                             @"category": segment[@"category"] ?: @"sponsor",
-                            @"uuid": segment[@"UUID"] ?: [NSString stringWithFormat:@"%@-%f", videoID, start]
+                            @"uuid": segment[@"UUID"] ?: [NSString stringWithFormat:@"%@-%f", videoID, start],
+                            @"voteable": @([segment[@"UUID"] isKindOfClass:[NSString class]])
                         }];
                     }
                 }
@@ -122,6 +123,88 @@ static void SBSeek(YTPlayerViewController *player, double time) {
     }
 }
 
+static NSDictionary *sbLastSkipped;
+static __weak YTPlayerViewController *sbLastSkippedPlayer;
+
+static NSString *SBUserID(void) {
+    YTLUserDefaults *defaults = [YTLUserDefaults standardUserDefaults];
+    NSString *userID = [defaults stringForKey:@"sbUserID"];
+    if (userID.length < 30) {
+        userID = [[[NSUUID UUID].UUIDString stringByAppendingString:[NSUUID UUID].UUIDString] stringByReplacingOccurrencesOfString:@"-" withString:@""].lowercaseString;
+        [defaults setObject:userID forKey:@"sbUserID"];
+    }
+    return userID;
+}
+
+static void SBToast(NSString *message) {
+    UIViewController *presenter = [YTLClass(@"YTUIUtils") topViewControllerForPresenting];
+    if (presenter) [[YTLClass(@"YTToastResponderEvent") eventWithMessage:message firstResponder:presenter] send];
+}
+
+static void SBVote(NSDictionary *segment, NSInteger type) {
+    NSString *uuid = segment[@"uuid"];
+    if (![uuid isKindOfClass:[NSString class]] || ![segment[@"voteable"] boolValue]) {
+        SBToast(LOC(@"SBVoteFailed"));
+        return;
+    }
+    NSURLComponents *components = [NSURLComponents componentsWithString:[kSBServer stringByAppendingString:@"/api/voteOnSponsorTime"]];
+    components.queryItems = @[
+        [NSURLQueryItem queryItemWithName:@"UUID" value:uuid],
+        [NSURLQueryItem queryItemWithName:@"userID" value:SBUserID()],
+        [NSURLQueryItem queryItemWithName:@"type" value:[NSString stringWithFormat:@"%ld", (long)type]]
+    ];
+    if (!components.URL) return;
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:components.URL cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10];
+    request.HTTPMethod = @"POST";
+    [request setValue:@"YTLite" forHTTPHeaderField:@"User-Agent"];
+    [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        NSInteger status = [response isKindOfClass:[NSHTTPURLResponse class]] ? ((NSHTTPURLResponse *)response).statusCode : 0;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SBToast(status == 200 ? LOC(@"SBVoteSent") : LOC(@"SBVoteFailed"));
+        });
+    }] resume];
+}
+
+static void SBPresentSegmentMenu(YTPlayerViewController *player, NSDictionary *segment, BOOL skipped) {
+    if (!segment) return;
+    UIViewController *presenter = [YTLClass(@"YTUIUtils") topViewControllerForPresenting];
+    YTDefaultSheetController *sheet = [YTLClass(@"YTDefaultSheetController") sheetControllerWithParentResponder:nil];
+    if (!sheet || !presenter) return;
+
+    if (skipped) {
+        [sheet addAction:[YTLClass(@"YTActionSheetAction") actionWithTitle:LOC(@"SBUndoSkip") iconImage:[UIImage systemImageNamed:@"arrow.uturn.backward"] style:0 handler:^{
+            [sbSkipped addObject:segment[@"uuid"]];
+            SBSeek(player, [segment[@"start"] doubleValue]);
+        }]];
+    }
+    [sheet addAction:[YTLClass(@"YTActionSheetAction") actionWithTitle:LOC(@"SBVoteDown") iconImage:[UIImage systemImageNamed:@"hand.thumbsdown"] style:0 handler:^{
+        [sbSkipped addObject:segment[@"uuid"]];
+        if (skipped) SBSeek(player, [segment[@"start"] doubleValue]);
+        SBVote(segment, 0);
+    }]];
+    [sheet addAction:[YTLClass(@"YTActionSheetAction") actionWithTitle:LOC(@"SBVoteUp") iconImage:[UIImage systemImageNamed:@"hand.thumbsup"] style:0 handler:^{
+        SBVote(segment, 1);
+    }]];
+    [sheet presentFromViewController:presenter animated:YES completion:nil];
+}
+
+@interface YTLSBToastTarget : NSObject
+@end
+
+@implementation YTLSBToastTarget
++ (instancetype)shared {
+    static YTLSBToastTarget *target;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ target = [YTLSBToastTarget new]; });
+    return target;
+}
+
+- (void)tapped:(UITapGestureRecognizer *)gesture {
+    gesture.view.hidden = YES;
+    SBPresentSegmentMenu(sbLastSkippedPlayer, sbLastSkipped, YES);
+}
+@end
+
 @interface YTLSponsorSkipButton : UIButton
 @end
 
@@ -139,7 +222,12 @@ static void SBSeek(YTPlayerViewController *player, double time) {
     self.contentEdgeInsets = UIEdgeInsetsMake(7, 14, 7, 14);
     [self setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     [self addTarget:self action:@selector(skip) forControlEvents:UIControlEventTouchUpInside];
+    [self addGestureRecognizer:[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(longPress:)]];
     return self;
+}
+
+- (void)longPress:(UILongPressGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateBegan) SBPresentSegmentMenu(sbButtonPlayer, sbPendingSegment, NO);
 }
 
 - (void)skip {
@@ -209,24 +297,25 @@ static void SBShowCenterToast(YTPlayerViewController *player, NSString *message)
         toast.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.75];
         toast.layer.cornerRadius = 18;
         toast.layer.masksToBounds = YES;
-        toast.userInteractionEnabled = NO;
+        toast.userInteractionEnabled = YES;
+        [toast addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:[YTLSBToastTarget shared] action:@selector(tapped:)]];
         [host addSubview:toast];
         [NSLayoutConstraint activateConstraints:@[
             [toast.centerXAnchor constraintEqualToAnchor:host.centerXAnchor],
             [toast.centerYAnchor constraintEqualToAnchor:host.centerYAnchor],
             [toast.widthAnchor constraintLessThanOrEqualToAnchor:host.widthAnchor multiplier:0.8],
-            [toast.heightAnchor constraintGreaterThanOrEqualToConstant:36]
+            [toast.heightAnchor constraintGreaterThanOrEqualToConstant:52]
         ]];
     }
 
-    toast.text = [NSString stringWithFormat:@"   %@   ", message];
+    toast.text = [NSString stringWithFormat:@"   %@   \n   %@   ", message, LOC(@"SBTapToUndo")];
     [host bringSubviewToFront:toast];
     [toast.layer removeAllAnimations];
     toast.alpha = 0;
     toast.hidden = NO;
     [UIView animateWithDuration:0.2 animations:^{ toast.alpha = 1; } completion:^(BOOL finished) {
         if (!finished) return;
-        [UIView animateWithDuration:0.3 delay:1.6 options:UIViewAnimationOptionBeginFromCurrentState animations:^{ toast.alpha = 0; } completion:^(BOOL done) {
+        [UIView animateWithDuration:0.3 delay:2.6 options:UIViewAnimationOptionBeginFromCurrentState animations:^{ toast.alpha = 0; } completion:^(BOOL done) {
             if (done) toast.hidden = YES;
         }];
     }];
@@ -282,6 +371,8 @@ static void SBHandleTime(YTPlayerViewController *player, double time) {
 
         if (ytlBool(@"sbNotify")) {
             NSString *message = [NSString stringWithFormat:LOC(@"SBSkipped"), SBCategoryName(segment[@"category"])];
+            sbLastSkipped = segment;
+            sbLastSkippedPlayer = player;
             SBShowCenterToast(player, message);
         }
         return;

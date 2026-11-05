@@ -140,3 +140,9 @@
 "SleepTimerOff" = "Turn off the timer";
 "SleepTimerSet" = "Sleep timer: %ld min";
 "SleepTimerMinutes" = "%ld minutes";
+"SBTapToUndo" = "Tap to undo or report";
+"SBUndoSkip" = "Go back to the segment";
+"SBVoteDown" = "Report: wrong segment";
+"SBVoteUp" = "Good segment";
+"SBVoteSent" = "Vote sent to SponsorBlock, thanks";
+"SBVoteFailed" = "Could not send the vote";
