@@ -142,6 +142,7 @@ static void YTLPromptAddSite(void (^completion)(NSURL *url)) {
 @interface YTLSiteDropdown : UIControl
 @property (nonatomic, strong) UIView *card;
 + (void)showItems:(NSArray <YTLSiteDropdownItem *> *)items fromRect:(CGRect)rect inView:(UIView *)host;
+- (void)dismiss;
 @end
 
 @implementation YTLSiteDropdown
@@ -163,10 +164,16 @@ static void YTLPromptAddSite(void (^completion)(NSURL *url)) {
     card.layer.borderWidth = 0.5;
     card.layer.borderColor = [[UIColor separatorColor] CGColor];
 
+    UIScrollView *scroll = [UIScrollView new];
+    scroll.translatesAutoresizingMaskIntoConstraints = NO;
+    scroll.showsHorizontalScrollIndicator = NO;
+    scroll.alwaysBounceVertical = NO;
+    [card.contentView addSubview:scroll];
+
     UIStackView *stack = [UIStackView new];
     stack.axis = UILayoutConstraintAxisVertical;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
-    [card.contentView addSubview:stack];
+    [scroll addSubview:stack];
 
     for (NSUInteger i = 0; i < items.count; i++) {
         [stack addArrangedSubview:[dropdown rowForItem:items[i]]];
@@ -179,25 +186,37 @@ static void YTLPromptAddSite(void (^completion)(NSURL *url)) {
     }
 
     [NSLayoutConstraint activateConstraints:@[
-        [stack.topAnchor constraintEqualToAnchor:card.contentView.topAnchor constant:4],
-        [stack.bottomAnchor constraintEqualToAnchor:card.contentView.bottomAnchor constant:-4],
-        [stack.leadingAnchor constraintEqualToAnchor:card.contentView.leadingAnchor],
-        [stack.trailingAnchor constraintEqualToAnchor:card.contentView.trailingAnchor]
+        [scroll.topAnchor constraintEqualToAnchor:card.contentView.topAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:card.contentView.bottomAnchor],
+        [scroll.leadingAnchor constraintEqualToAnchor:card.contentView.leadingAnchor],
+        [scroll.trailingAnchor constraintEqualToAnchor:card.contentView.trailingAnchor],
+        [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:4],
+        [stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-4],
+        [stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor],
+        [stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor],
+        [stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor]
     ]];
 
     CGFloat width = MIN(270, CGRectGetWidth(host.bounds) - 24);
-    CGSize size = [card systemLayoutSizeFittingSize:CGSizeMake(width, UILayoutFittingCompressedSize.height) withHorizontalFittingPriority:UILayoutPriorityRequired verticalFittingPriority:UILayoutPriorityFittingSizeLevel];
-    CGFloat x = MIN(MAX(12, CGRectGetMinX(rect)), CGRectGetWidth(host.bounds) - width - 12);
-    CGFloat y = CGRectGetMaxY(rect) + 6;
-    card.frame = CGRectMake(x, y, width, size.height);
+    CGFloat contentHeight = [stack systemLayoutSizeFittingSize:CGSizeMake(width, UILayoutFittingCompressedSize.height) withHorizontalFittingPriority:UILayoutPriorityRequired verticalFittingPriority:UILayoutPriorityFittingSizeLevel].height + 8;
+    UIEdgeInsets safe = host.safeAreaInsets;
+    CGFloat below = CGRectGetHeight(host.bounds) - safe.bottom - CGRectGetMaxY(rect) - 18;
+    CGFloat above = CGRectGetMinY(rect) - safe.top - 18;
+    BOOL up = below < MIN(contentHeight, 220) && above > below;
+    CGFloat height = MIN(contentHeight, MIN(MAX(up ? above : below, 120), CGRectGetHeight(host.bounds) * 0.6));
+    scroll.scrollEnabled = contentHeight > height;
+    CGFloat x = MIN(MAX(12, CGRectGetMaxX(rect) - width), CGRectGetWidth(host.bounds) - width - 12);
+    if (CGRectGetMinX(rect) < CGRectGetWidth(host.bounds) / 2) x = MIN(MAX(12, CGRectGetMinX(rect)), CGRectGetWidth(host.bounds) - width - 12);
+    CGFloat y = up ? CGRectGetMinY(rect) - 6 - height : CGRectGetMaxY(rect) + 6;
     dropdown.card = card;
     [dropdown addSubview:card];
     [host addSubview:dropdown];
 
     dropdown.alpha = 0;
+    CGFloat anchorX = MIN(MAX((CGRectGetMidX(rect) - x) / width, 0.1), 0.9);
+    card.layer.anchorPoint = CGPointMake(anchorX, up ? 1 : 0);
+    card.frame = CGRectMake(x, y, width, height);
     card.transform = CGAffineTransformMakeScale(0.94, 0.94);
-    card.layer.anchorPoint = CGPointMake(0.15, 0);
-    card.frame = CGRectMake(x, y, width, size.height);
     [UIView animateWithDuration:0.22 delay:0 usingSpringWithDamping:0.85 initialSpringVelocity:0.4 options:0 animations:^{
         dropdown.alpha = 1;
         card.transform = CGAffineTransformIdentity;
@@ -406,29 +425,6 @@ static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hos
         "})();";
     [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:autofillScript injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:NO]];
 
-    NSString *logoScript = @"(function(){"
-        "if(window.__ytlBack)return;window.__ytlBack=1;"
-        "var host=location.hostname.replace(/^www\\./,'');"
-        "var name=host.split('.')[0].toLowerCase().replace(/[^a-z0-9]/g,'');"
-        "function norm(t){return (t||'').toLowerCase().replace(/[^a-z0-9]/g,'');}"
-        "function isRoot(a){if(!a||!a.getAttribute)return false;var h=a.getAttribute('href');if(h===null)return false;"
-        "try{var u=new URL(h,location.href);return u.hostname.replace(/^www\\./,'')===host&&(u.pathname==='/'||u.pathname==='')&&!u.search;}catch(e){return false;}}"
-        "function logoOf(el){for(var n=el,i=0;n&&i<6;n=n.parentElement,i++){"
-        "if(n.tagName==='A'&&isRoot(n))return n;"
-        "var c=(n.className&&n.className.baseVal!==undefined?n.className.baseVal:n.className)||'';var id=n.id||'';"
-        "if(/logo|brand/i.test(c+' '+id))return n;"
-        "if(n.tagName==='IMG'&&(/logo/i.test(n.alt||'')||/logo/i.test(n.src||'')||(name&&norm(n.alt).indexOf(name)>=0)))return n;"
-        "if(name&&name.length>2&&n.children.length===0&&norm(n.textContent)===name)return n;"
-        "if((n.tagName==='A'||n.tagName==='IMG'||n.tagName==='svg'||n.tagName==='SVG')&&n.closest&&n.closest('header,nav,[role=banner]')){"
-        "var r=n.getBoundingClientRect();if(r.top<140&&r.left<window.innerWidth*0.45&&r.width>0&&r.width<window.innerWidth*0.6){"
-        "var hd=n.closest('header,nav,[role=banner]');var first=hd.querySelector('a[href],img,svg');if(first&&(first===n||first.contains(n)||n.contains(first)))return n;}}}"
-        "return null;}"
-        "document.addEventListener('click',function(e){var l=logoOf(e.target);if(!l)return;e.preventDefault();e.stopPropagation();"
-        "var r=l.getBoundingClientRect();window.webkit.messageHandlers.ytlBack.postMessage({x:r.left,y:r.top,w:r.width,h:r.height});},true);"
-        "})();";
-    [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:logoScript injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES]];
-    [configuration.userContentController addScriptMessageHandler:self name:@"ytlBack"];
-
     NSString *mediaScript = @"(function(){"
         "if(window.__ytlMedia)return;window.__ytlMedia=1;"
         "function send(){var fs=!!(document.fullscreenElement||document.webkitFullscreenElement||document.webkitCurrentFullScreenElement);"
@@ -468,7 +464,7 @@ static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hos
     _backButton.layer.shadowOffset = CGSizeMake(0, 2);
     [_backButton setImage:YTLYouTubeIcon() forState:UIControlStateNormal];
     _backButton.accessibilityLabel = @"YouTube";
-    [_backButton addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
+    [_backButton addTarget:self action:@selector(showSitesMenu) forControlEvents:UIControlEventTouchUpInside];
     [_backButton addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(drag:)]];
     [self.view addSubview:_backButton];
 
@@ -523,7 +519,17 @@ static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hos
     }];
 }
 
-- (void)showLogoMenuFromRect:(CGRect)rect {
+- (void)showSitesMenu {
+    for (UIView *view in self.view.subviews) {
+        if ([view isKindOfClass:[YTLSiteDropdown class]]) {
+            [(YTLSiteDropdown *)view dismiss];
+            return;
+        }
+    }
+    [self showMenuFromRect:self.backButton.frame];
+}
+
+- (void)showMenuFromRect:(CGRect)rect {
     NSMutableArray <YTLSiteDropdownItem *> *items = [NSMutableArray array];
 
     YTLSiteDropdownItem *youtube = [YTLSiteDropdownItem new];
@@ -557,16 +563,11 @@ static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hos
         [items addObject:item];
     }
 
-    CGRect anchor = [self.webView convertRect:rect toView:self.view];
-    [YTLSiteDropdown showItems:items fromRect:anchor inView:self.view];
+    [YTLSiteDropdown showItems:items fromRect:rect inView:self.view];
 }
 
 - (void)userContentController:(WKUserContentController *)controller didReceiveScriptMessage:(WKScriptMessage *)message {
-    if ([message.name isEqualToString:@"ytlBack"]) {
-        NSDictionary *body = [message.body isKindOfClass:[NSDictionary class]] ? message.body : nil;
-        CGRect rect = CGRectMake([body[@"x"] doubleValue], [body[@"y"] doubleValue], [body[@"w"] doubleValue], [body[@"h"] doubleValue]);
-        [self showLogoMenuFromRect:rect];
-    } else if ([message.name isEqualToString:@"ytlMedia"] && [message.body isKindOfClass:[NSDictionary class]]) {
+    if ([message.name isEqualToString:@"ytlMedia"] && [message.body isKindOfClass:[NSDictionary class]]) {
         self.mediaFullscreen = [message.body[@"fullscreen"] boolValue];
         self.mediaPiP = [message.body[@"pip"] boolValue];
         [self updateBackButton];
