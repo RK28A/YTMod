@@ -452,6 +452,28 @@ static NSString *const kYTLPopupGuardScript = @"(function(){"
     "if((r.width>=window.innerWidth*0.9&&r.height>=window.innerHeight*0.6)||getComputedStyle(a).opacity==='0'){e.preventDefault();e.stopImmediatePropagation();}}catch(x){}},true);"
     "})();";
 
+static NSString *const kYTLCosmeticScript = @"(function(){"
+    "if(window.__ytlCosmetic)return;window.__ytlCosmetic=1;"
+    "var LABEL=/^(publicit[eé]s?|advertisements?|advertising|sponsoris[eé]e?s?|sponsored|annonces?|anzeige|pubblicit[aà]|publicidad)$/i;"
+    "var STRIP=/publicit[eé]s?|advertisements?|advertising|sponsoris[eé]e?s?|sponsored|annonces?|anzeige|pubblicit[aà]|publicidad/gi;"
+    "var NAG=/(cliqu\\w* sur (une|les|nos) pubs?|(d[eé]sactiv\\w*|coupe\\w*) (votre|ton|l'|le )?(bloqueur|adblock)|disable (your )?ad ?block|support us by clicking)/i;"
+    "function rest(el){return ((el.innerText||el.textContent||'').replace(STRIP,'')).replace(/\\s+/g,'');}"
+    "function hide(el){if(el&&el!==document.body&&el!==document.documentElement)el.style.setProperty('display','none','important');}"
+    "function media(el){return el.querySelector&&el.querySelector('img,iframe,video,picture,a[href],canvas,ins,[style*=background]');}"
+    "function clean(root){"
+    "var all=(root||document.body||document).querySelectorAll('span,p,div,h1,h2,h3,h4,h5,h6,small,strong,b,label,header,figcaption,a');"
+    "for(var i=0;i<all.length;i++){var el=all[i];if(el.__ytlSeen)continue;"
+    "var text=(el.textContent||'').trim();if(text.length>90)continue;"
+    "if(el.children.length===0&&LABEL.test(text)){el.__ytlSeen=1;"
+    "var box=el;for(var d=0;d<6&&box.parentElement&&box.parentElement!==document.body;d++){var p=box.parentElement;if(rest(p).length>0)break;box=p;}"
+    "if(box!==el&&rest(box).length===0&&media(box)){hide(box);}else{hide(el);var n=el.nextElementSibling;if(n&&rest(n).length===0&&media(n))hide(n);}"
+    "}else if(el.children.length<=2&&NAG.test(text)){el.__ytlSeen=1;hide(el);}}"
+    "document.querySelectorAll('a[rel~=sponsored]').forEach(function(a){hide(a);});}"
+    "var t;function run(){clearTimeout(t);t=setTimeout(function(){try{clean();}catch(e){}},150);}"
+    "if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',run);else run();"
+    "new MutationObserver(run).observe(document.documentElement,{childList:true,subtree:true});"
+    "})();";
+
 #pragma mark - Site view controller
 
 @interface YTLSiteViewController : UIViewController <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler>
@@ -550,6 +572,7 @@ static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hos
     configuration.websiteDataStore = [WKWebsiteDataStore defaultDataStore];
     if (ytlBool(@"siteAdBlock")) {
         [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:kYTLPopupGuardScript injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO]];
+        [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:kYTLCosmeticScript injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:NO]];
     }
     if (!siteVisitedHosts) siteVisitedHosts = [NSMutableSet set];
     for (NSString *entry in YTLSiteList()) {
@@ -619,7 +642,12 @@ static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hos
     _backButton.layer.shadowOffset = CGSizeMake(0, 2);
     [_backButton setImage:YTLYouTubeIcon() forState:UIControlStateNormal];
     _backButton.accessibilityLabel = @"YouTube";
-    [_backButton addTarget:self action:@selector(showSitesMenu) forControlEvents:UIControlEventTouchUpInside];
+    UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(close)];
+    doubleTap.numberOfTapsRequired = 2;
+    UITapGestureRecognizer *singleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(showSitesMenu)];
+    [singleTap requireGestureRecognizerToFail:doubleTap];
+    [_backButton addGestureRecognizer:doubleTap];
+    [_backButton addGestureRecognizer:singleTap];
     [_backButton addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(drag:)]];
     [self.view addSubview:_backButton];
 
