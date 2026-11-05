@@ -125,3 +125,4 @@
 "Theme" = "Thème";
 "DownloadsMenu" = "Téléchargements & copie";
 "OLEDRestart" = "Redémarre l'app pour l'appliquer partout";
+"SBSkipLongButton" = "Passer : %@ (%ld min) ? ›";
