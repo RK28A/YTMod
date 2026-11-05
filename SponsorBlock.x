@@ -254,7 +254,7 @@ static void SBHandleTime(YTPlayerViewController *player, double time) {
     } @catch (NSException *exception) {}
 }
 
-- (void)singleVideo:(YTSingleVideoController *)video currentVideoTimeDidChange:(YTSingleVideoTime *)time {
+- (void)singleVideo:(YTSingleVideoController *)video currentVideoTimeDidChange:(YTSingleVideoTime *)time { // legacy
     %orig;
     @try {
         SBHandleTime(self, time.time);

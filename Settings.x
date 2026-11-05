@@ -196,7 +196,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
     %orig(YTLInsertDeepBlack(items, category), category, title, icon, titleDescription, headerHidden);
 }
 
-- (void)setSectionItems:(NSArray *)items forCategory:(NSUInteger)category title:(id)title titleDescription:(id)titleDescription headerHidden:(BOOL)headerHidden {
+- (void)setSectionItems:(NSArray *)items forCategory:(NSUInteger)category title:(id)title titleDescription:(id)titleDescription headerHidden:(BOOL)headerHidden { // legacy
     %orig(YTLInsertDeepBlack(items, category), category, title, titleDescription, headerHidden);
 }
 %end

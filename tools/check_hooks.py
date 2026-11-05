@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LEGACY = set()
+LEGACY_METHODS = set()
 SOURCES = ["YTLite.x", "Settings.x", "YTNativeShare.x", "Sideloading.x", "SponsorBlock.x", "Downloads.x", "HomeFilter.x"]
 SYSTEM_PREFIXES = ("NS", "UI", "CA", "CK", "AV", "MP", "PH", "_UI", "WK", "SK")
 
@@ -111,6 +112,8 @@ def parse_sources():
                 sig = stripped[1:].split("{")[0]
                 sel = selector_from_signature(re.sub(r"^\s*\([^)]*\)", "", sig, count=1))
                 hooks.append((current, stripped[0] + sel, name, lineno))
+                if "// legacy" in stripped:
+                    LEGACY_METHODS.add((current, stripped[0] + sel))
             for m in re.finditer(r'%c\((\w+)\)|NSClassFromString\(@"(\w+)"\)|objc_lookUpClass\("(\w+)"\)', line):
                 cls = next(g for g in m.groups() if g)
                 classes.add((cls, name, lineno))
@@ -183,7 +186,7 @@ def main():
     report["missing_classes"] = [c for c in report["missing_classes"] if not (c["class"] in seen or seen.add(c["class"]))]
 
     def emit(item, msg):
-        legacy = item["class"] in LEGACY
+        legacy = item["class"] in LEGACY or (item["class"], item.get("selector")) in LEGACY_METHODS
         if args.github:
             level = "notice" if legacy else "warning"
             print("::%s file=%s,line=%d::%s%s" % (level, item["file"], item["line"], msg, " (legacy hook, replaced on this version)" if legacy else ""))
@@ -195,7 +198,7 @@ def main():
     for m in report["missing_methods"]:
         emit(m, "hooked method not found: %s[%s %s]" % (m["selector"][0], m["class"], m["selector"][1:]))
 
-    active = [m for m in report["missing_methods"] if m["class"] not in LEGACY]
+    active = [m for m in report["missing_methods"] if m["class"] not in LEGACY and (m["class"], m["selector"]) not in LEGACY_METHODS]
     print("checked %d hooks: %d missing (%d legacy), %d classes not found" % (report["checked"], len(report["missing_methods"]), len(report["missing_methods"]) - len(active), len(report["missing_classes"])))
 
     if args.json:

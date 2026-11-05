@@ -49,7 +49,12 @@ static UIImage *YTImageNamed(NSString *imageName) {
 - (BOOL)isMonetized { return ytlBool(@"noAds") ? NO : %orig; }
 %end
 
-%hook YTDataUtils
+%hook YTAdShieldUtils
++ (id)spamSignalsDictionary { return ytlBool(@"noAds") ? nil : %orig; }
++ (id)spamSignalsDictionaryWithoutIDFA { return ytlBool(@"noAds") ? nil : %orig; }
+%end
+
+%hook YTDataUtils // legacy
 + (id)spamSignalsDictionary { return ytlBool(@"noAds") ? nil : %orig; }
 + (id)spamSignalsDictionaryWithoutIDFA { return ytlBool(@"noAds") ? nil : %orig; }
 %end
@@ -169,7 +174,7 @@ static UIColor *YTLOLEDColor(UIColor *color) {
 - (UIColor *)baseBackground { return self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig; }
 - (UIColor *)background1 { return self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig; }
 - (UIColor *)background2 { return self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig; }
-- (UIColor *)background3 { return self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig; }
+- (UIColor *)background3 { return self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig; } // legacy
 %end
 
 %hook YTTokensColorPalette
@@ -507,7 +512,8 @@ static void YTLFilterSections(NSMutableArray *sections) {
 - (BOOL)replaceNextPaddleWithFastForwardButtonForSingletonVods { return ytlBool(@"replacePrevNext") ? YES : %orig; }
 - (BOOL)replacePreviousPaddleWithRewindButtonForSingletonVods { return ytlBool(@"replacePrevNext") ? YES : %orig; }
 // Disable Free Zoom
-- (BOOL)videoZoomFreeZoomEnabledGlobalConfig { return ytlBool(@"noFreeZoom") ? NO : %orig; }
+- (BOOL)videoZoomFreeZoomEnabled { return ytlBool(@"noFreeZoom") ? NO : %orig; }
+- (BOOL)videoZoomFreeZoomEnabledGlobalConfig { return ytlBool(@"noFreeZoom") ? NO : %orig; } // legacy
 // Stick Sort Buttons in Comments Section
 - (BOOL)enableHideChipsInTheCommentsHeaderOnScrollIos { return ytlBool(@"stickSortComments") ? NO : %orig; }
 // Hide Sort Buttons in Comments Section
@@ -545,7 +551,7 @@ static void YTLFilterSections(NSMutableArray *sections) {
 
 // Hide Paid Promotion Cards
 %hook YTMainAppVideoPlayerOverlayViewController
-- (void)setPaidContentWithPlayerData:(id)data { if (!ytlBool(@"noPromotionCards")) %orig; }
+- (void)setPaidContentWithPlayerData:(id)data { if (!ytlBool(@"noPromotionCards")) %orig; } // legacy
 - (void)playerOverlayProvider:(YTPlayerOverlayProvider *)provider didInsertPlayerOverlay:(YTPlayerOverlay *)overlay {
     if ([[overlay overlayIdentifier] isEqualToString:@"player_overlay_paid_content"] && ytlBool(@"noPromotionCards")) return;
     %orig;
@@ -740,7 +746,7 @@ void autoSkipShorts(YTPlayerViewController *self, YTSingleVideoController *video
 }
 
 %hook YTPlayerViewController
-- (void)loadWithPlayerTransition:(id)arg1 playbackConfig:(id)arg2 {
+- (void)loadWithPlayerTransition:(id)arg1 playbackConfig:(id)arg2 { // legacy
     %orig;
     [self ytl_scheduleAutoActions];
 }
@@ -881,7 +887,7 @@ void autoSkipShorts(YTPlayerViewController *self, YTSingleVideoController *video
     }
 }
 
-- (void)singleVideo:(YTSingleVideoController *)video currentVideoTimeDidChange:(YTSingleVideoTime *)time {
+- (void)singleVideo:(YTSingleVideoController *)video currentVideoTimeDidChange:(YTSingleVideoTime *)time { // legacy
     %orig;
 
     addEndTime(self, video, time);
@@ -927,7 +933,7 @@ void autoSkipShorts(YTPlayerViewController *self, YTSingleVideoController *video
 
 %hook YTMainAppVideoPlayerOverlayViewController
 // Remember Playback Speed
-- (void)varispeedSwitchController:(id)controller didSelectRate:(float)rate {
+- (void)varispeedSwitchController:(id)controller didSelectRate:(float)rate { // legacy
     %orig;
 
     if (ytlBool(@"rememberPlaybackSpeed") && rate > 0 && rate <= 16) {

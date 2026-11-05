@@ -384,7 +384,7 @@ static void YTLTrackPlayer(YTPlayerViewController *player) {
     YTLTrackPlayer(self);
 }
 
-- (void)singleVideo:(YTSingleVideoController *)video currentVideoTimeDidChange:(YTSingleVideoTime *)time {
+- (void)singleVideo:(YTSingleVideoController *)video currentVideoTimeDidChange:(YTSingleVideoTime *)time { // legacy
     %orig;
     YTLTrackPlayer(self);
 }

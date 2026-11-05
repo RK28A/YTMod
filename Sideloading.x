@@ -132,7 +132,7 @@ static BOOL isSelf() {
 %end
 
 // Fix login for YouTube 17.33.2 and higher
-%hook SSOKeychainCore
+%hook SSOKeychainCore // legacy
 + (NSString *)accessGroup {
     return accessGroupID();
 }
