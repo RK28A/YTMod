@@ -172,13 +172,37 @@ static UIColor *YTLOLEDColor(UIColor *color) {
 
 FOUNDATION_EXPORT UIColor *YTLThemePaletteColor(NSInteger level, BOOL dark);
 
+static id YTLSafeResponder(id responder) {
+    if (!responder || [responder respondsToSelector:@selector(parentResponder)]) return responder;
+    if ([responder isKindOfClass:[UIViewController class]]) {
+        for (UIViewController *vc = responder; vc; vc = vc.presentingViewController ?: vc.parentViewController) {
+            if ([vc respondsToSelector:@selector(parentResponder)]) return vc;
+        }
+    }
+    for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+            UIViewController *root = window.rootViewController;
+            if (window.isKeyWindow && [root respondsToSelector:@selector(parentResponder)]) return root;
+        }
+    }
+    return nil;
+}
+
+%hook YTResponderEvent
+- (id)initWithFirstResponder:(id)responder {
+    id safe = YTLSafeResponder(responder);
+    return safe ? %orig(safe) : nil;
+}
+%end
+
 %hook YTCommonColorPalette
 - (UIColor *)baseBackground { return YTLThemePaletteColor(0, self.pageStyle == 1) ?: (self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig); }
 - (UIColor *)background1 { return YTLThemePaletteColor(1, self.pageStyle == 1) ?: (self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig); }
 - (UIColor *)background2 { return YTLThemePaletteColor(2, self.pageStyle == 1) ?: (self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig); }
 - (UIColor *)background3 { return YTLThemePaletteColor(3, self.pageStyle == 1) ?: (self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig); } // legacy
-- (UIColor *)brandBackgroundSolid { return YTLThemePaletteColor(1, self.pageStyle == 1) ?: %orig; }
-- (UIColor *)brandBackgroundPrimary { return YTLThemePaletteColor(1, self.pageStyle == 1) ?: %orig; }
+- (UIColor *)brandBackgroundSolid { return YTLThemePaletteColor(0, self.pageStyle == 1) ?: %orig; }
+- (UIColor *)brandBackgroundPrimary { return YTLThemePaletteColor(0, self.pageStyle == 1) ?: %orig; }
 %end
 
 %hook YTTokensColorPalette
@@ -187,7 +211,7 @@ FOUNDATION_EXPORT UIColor *YTLThemePaletteColor(NSInteger level, BOOL dark);
     return YTLThemePaletteColor(0, dark) ?: (dark ? YTLOLEDColor(%orig) : %orig);
 }
 - (UIColor *)menuBackground {
-    return YTLThemePaletteColor(3, [YTLValue(self, @"pageStyle") integerValue] == 1) ?: %orig;
+    return YTLThemePaletteColor(4, [YTLValue(self, @"pageStyle") integerValue] == 1) ?: %orig;
 }
 %end
 
