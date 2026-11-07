@@ -203,9 +203,17 @@ static id YTLSafeResponder(id responder) {
 - (UIColor *)background3 { return YTLThemePaletteColor(3, self.pageStyle == 1) ?: (self.pageStyle == 1 ? YTLOLEDColor(%orig) : %orig); } // legacy
 - (UIColor *)brandBackgroundSolid { return YTLThemePaletteColor(0, self.pageStyle == 1) ?: %orig; }
 - (UIColor *)brandBackgroundPrimary { return YTLThemePaletteColor(0, self.pageStyle == 1) ?: %orig; }
+- (UIColor *)brandBackgroundSecondary { return YTLThemePaletteColor(0, self.pageStyle == 1) ?: %orig; }
+- (UIColor *)generalBackgroundA { return YTLThemePaletteColor(0, self.pageStyle == 1) ?: %orig; }
+- (UIColor *)generalBackgroundB { return YTLThemePaletteColor(1, self.pageStyle == 1) ?: %orig; }
+- (UIColor *)generalBackgroundC { return YTLThemePaletteColor(2, self.pageStyle == 1) ?: %orig; }
+- (UIColor *)raisedBackground { return YTLThemePaletteColor(1, self.pageStyle == 1) ?: %orig; }
 %end
 
 %hook YTTokensColorPalette
+- (UIColor *)raisedBackground {
+    return YTLThemePaletteColor(1, [YTLValue(self, @"pageStyle") integerValue] == 1) ?: %orig;
+}
 - (UIColor *)baseBackground {
     BOOL dark = [YTLValue(self, @"pageStyle") integerValue] == 1;
     return YTLThemePaletteColor(0, dark) ?: (dark ? YTLOLEDColor(%orig) : %orig);

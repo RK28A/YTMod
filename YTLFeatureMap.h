@@ -89,6 +89,7 @@ static NSDictionary <NSString *, NSArray <NSString *> *> *YTLFeatureGates(void) 
         @"stickSortComments": @[@"YTColdConfig -enableHideChipsInTheCommentsHeaderOnScrollIos"],
         @"stickyNavbar": @[@"YTHeaderView -stickyNavHeaderEnabled"],
         @"stockVolumeHUD": @[@"YTColdConfig -iosUseSystemVolumeControlInFullscreen"],
+        @"themeEnabled": @[@"YTBaseInnerTubeViewController -viewDidAppear:"],
         @"videoEndTime": @[@"YTInlinePlayerBarContainerView -setPeekableViewVisible:"],
     };
 }
