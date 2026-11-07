@@ -2,3 +2,5 @@
 # Exemple :
 # example.com
 # https://autre-site.com
+anime-sama.to
+movix.zip
