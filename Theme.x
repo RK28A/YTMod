@@ -75,20 +75,21 @@ static NSURL *YTLThemeMediaURL(NSDictionary *config) {
 
 UIColor *YTLThemePaletteColor(NSInteger level, BOOL dark) {
     if (!ytlBool(@"themeEnabled")) return nil;
-    static UIColor *cache[2][4];
-    static double cachedSurface = -1;
-    static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
-    level = MIN(MAX(level, 0), 3);
-    os_unfair_lock_lock(&lock);
-    if (cachedSurface != themeSurface) {
-        cachedSurface = themeSurface;
+    static UIColor *cache[2][5];
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
         for (int d = 0; d < 2; d++) {
-            for (int l = 0; l < 4; l++) cache[d][l] = [UIColor colorWithWhite:d ? 0 : 1 alpha:MIN(MAX(cachedSurface + l * 0.12, 0), 1)];
+            CGFloat c = d ? 1 : 0;
+            cache[d][0] = [UIColor colorWithRed:0 green:0 blue:0 alpha:0];
+            cache[d][1] = [UIColor colorWithRed:c green:c blue:c alpha:0.08];
+            cache[d][2] = [UIColor colorWithRed:c green:c blue:c alpha:0.13];
+            cache[d][3] = [UIColor colorWithRed:c green:c blue:c alpha:0.18];
+            CGFloat m = d ? 0.13 : 1;
+            cache[d][4] = [UIColor colorWithRed:m green:m blue:m alpha:0.96];
         }
-    }
-    UIColor *color = cache[dark ? 1 : 0][level];
-    os_unfair_lock_unlock(&lock);
-    return color;
+    });
+    level = MIN(MAX(level, 0), 4);
+    return cache[dark ? 1 : 0][level];
 }
 
 #pragma mark - Particles
@@ -189,7 +190,9 @@ static CAEmitterCell *YTLParticleCell(YTLThemeEffect effect, double density, dou
 @property (nonatomic, strong) AVPlayerLooper *looper;
 @property (nonatomic, strong) AVPlayerLayer *playerLayer;
 @property (nonatomic, strong) CALayer *dimLayer;
+@property (nonatomic, strong) CALayer *tintLayer;
 @property (nonatomic, strong) CAEmitterLayer *emitter;
+@property (nonatomic, assign) BOOL darkTint;
 @property (nonatomic, copy) NSDictionary *config;
 @property (nonatomic, copy) NSURL *loadedMedia;
 @property (nonatomic, assign) CGSize builtSize;
@@ -220,6 +223,9 @@ static CAEmitterCell *YTLParticleCell(YTLThemeEffect effect, double density, dou
     _dimLayer = [CALayer layer];
     _dimLayer.backgroundColor = [UIColor blackColor].CGColor;
     [self.layer addSublayer:_dimLayer];
+
+    _tintLayer = [CALayer layer];
+    [self.layer addSublayer:_tintLayer];
 
     _emitter = [CAEmitterLayer layer];
     [self.layer addSublayer:_emitter];
@@ -411,6 +417,9 @@ static CAEmitterCell *YTLParticleCell(YTLThemeEffect effect, double density, dou
 
     self.dimLayer.frame = bounds;
     self.dimLayer.opacity = mode == YTLThemeModeGradient ? 0 : MIN(MAX([config[@"dim"] floatValue], 0), 0.95);
+    self.tintLayer.frame = bounds;
+    self.tintLayer.backgroundColor = self.darkTint ? [UIColor colorWithRed:0 green:0 blue:0 alpha:1].CGColor : [UIColor colorWithRed:1 green:1 blue:1 alpha:1].CGColor;
+    self.tintLayer.opacity = MIN(MAX([config[@"surface"] floatValue], 0), 0.95);
 
     YTLThemeEffect effect = [config[@"effect"] integerValue];
     if (effect == YTLThemeEffectNone) {
@@ -484,52 +493,82 @@ static CAEmitterCell *YTLParticleCell(YTLThemeEffect effect, double density, dou
 
 #pragma mark - Install in the app
 
-static const char kThemeRootColorKey;
+static NSHashTable <YTLThemeView *> *themeBackdrops;
+static const char kThemeOriginalColorKey;
 
-static void YTLThemeInstall(UIWindow *window) {
-    if (![window isKindOfClass:[UIWindow class]] || window.windowLevel != UIWindowLevelNormal || !window.rootViewController) return;
-    YTLThemeView *view = (YTLThemeView *)[window viewWithTag:kThemeViewTag];
-    UIView *root = window.rootViewController.view;
+static void YTLThemeBackdrop(UIView *host, BOOL dark) {
+    if (![host isKindOfClass:[UIView class]]) return;
+    YTLThemeView *existing = nil;
+    for (UIView *subview in host.subviews) {
+        if (subview.tag == kThemeViewTag && [subview isKindOfClass:[YTLThemeView class]]) {
+            existing = (YTLThemeView *)subview;
+            break;
+        }
+    }
     if (!ytlBool(@"themeEnabled")) {
-        if (view) {
-            [view removeFromSuperview];
-            UIColor *original = objc_getAssociatedObject(root, &kThemeRootColorKey);
-            if (original) root.backgroundColor = [original isKindOfClass:[UIColor class]] ? original : nil;
-            objc_setAssociatedObject(root, &kThemeRootColorKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (existing) {
+            [existing removeFromSuperview];
+            id original = objc_getAssociatedObject(host, &kThemeOriginalColorKey);
+            if (original) host.backgroundColor = [original isKindOfClass:[UIColor class]] ? original : nil;
+            objc_setAssociatedObject(host, &kThemeOriginalColorKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
         return;
     }
-    if (!objc_getAssociatedObject(root, &kThemeRootColorKey)) objc_setAssociatedObject(root, &kThemeRootColorKey, root.backgroundColor ?: (id)[NSNull null], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    if (![view isKindOfClass:[YTLThemeView class]]) {
-        view = [[YTLThemeView alloc] initWithFrame:window.bounds];
-        view.tag = kThemeViewTag;
-        view.followsSettings = YES;
-        view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        [window insertSubview:view atIndex:0];
-        [view applyConfig:YTLThemeConfig()];
-    } else if (window.subviews.firstObject != view) {
-        [window sendSubviewToBack:view];
+    if (!existing) {
+        if (!objc_getAssociatedObject(host, &kThemeOriginalColorKey)) objc_setAssociatedObject(host, &kThemeOriginalColorKey, host.backgroundColor ?: (id)[NSNull null], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        existing = [[YTLThemeView alloc] initWithFrame:host.bounds];
+        existing.tag = kThemeViewTag;
+        existing.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        existing.darkTint = dark;
+        [host insertSubview:existing atIndex:0];
+        [existing applyConfig:YTLThemeConfig()];
+        if (!themeBackdrops) themeBackdrops = [NSHashTable weakObjectsHashTable];
+        [themeBackdrops addObject:existing];
+    } else {
+        if (existing.darkTint != dark) {
+            existing.darkTint = dark;
+            [existing applyConfig:YTLThemeConfig()];
+        }
+        if (host.subviews.firstObject != existing) [host sendSubviewToBack:existing];
+        if (!CGRectEqualToRect(existing.frame, host.bounds)) existing.frame = host.bounds;
     }
-    root.backgroundColor = [UIColor clearColor];
+    if (host.backgroundColor && CGColorGetAlpha(host.backgroundColor.CGColor) > 0) host.backgroundColor = [UIColor clearColor];
 }
 
-static void YTLThemeInstallAll(void) {
-    for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
-        for (UIWindow *window in ((UIWindowScene *)scene).windows) YTLThemeInstall(window);
-    }
+static BOOL YTLHostIsDark(UIView *host) {
+    id style = YTLValue(host, @"pageStyle");
+    if ([style respondsToSelector:@selector(integerValue)]) return [style integerValue] == 1;
+    return host.traitCollection.userInterfaceStyle != UIUserInterfaceStyleLight;
 }
 
 static void YTLThemeRefreshAll(void) {
-    YTLThemeInstallAll();
+    for (YTLThemeView *view in [themeBackdrops allObjects]) [view applyConfig:YTLThemeConfig()];
     for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
         if (![scene isKindOfClass:[UIWindowScene class]]) continue;
-        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
-            YTLThemeView *view = (YTLThemeView *)[window viewWithTag:kThemeViewTag];
-            if ([view isKindOfClass:[YTLThemeView class]]) [view applyConfig:YTLThemeConfig()];
-        }
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) [window.rootViewController.viewIfLoaded setNeedsLayout];
     }
 }
+
+%hook YTAppView
+- (void)layoutSubviews {
+    %orig;
+    YTLThemeBackdrop((UIView *)(id)self, YTLHostIsDark((UIView *)(id)self));
+}
+%end
+
+%hook YTWatchView
+- (void)layoutSubviews {
+    %orig;
+    YTLThemeBackdrop((UIView *)(id)self, YTLHostIsDark((UIView *)(id)self));
+}
+%end
+
+%hook YTEngagementPanelView
+- (void)layoutSubviews {
+    %orig;
+    YTLThemeBackdrop(self, self.traitCollection.userInterfaceStyle != UIUserInterfaceStyleLight);
+}
+%end
 
 #pragma mark - Editor
 
@@ -863,7 +902,8 @@ static void YTLThemeRefreshAll(void) {
 - (void)enabledChanged:(UISwitch *)toggle {
     ytlSetBool(toggle.on, @"themeEnabled");
     YTLThemeRefreshAll();
-    [[YTLClass(@"YTToastResponderEvent") eventWithMessage:LOC(@"ThemeRestartToast") firstResponder:self] send];
+    UIViewController *responder = self.navigationController.presentingViewController;
+    if ([responder respondsToSelector:@selector(parentResponder)]) [[YTLClass(@"YTToastResponderEvent") eventWithMessage:LOC(@"ThemeRestartToast") firstResponder:responder] send];
 }
 
 - (void)presetTapped:(UIButton *)button {
@@ -952,6 +992,18 @@ static void YTLThemeRefreshAll(void) {
 
 @end
 
+%hook YTSearchViewController
+- (void)viewDidLoad {
+    %orig;
+    YTLThemeBackdrop(self.view, self.view.traitCollection.userInterfaceStyle != UIUserInterfaceStyleLight);
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    YTLThemeBackdrop(self.view, self.view.traitCollection.userInterfaceStyle != UIUserInterfaceStyleLight);
+}
+%end
+
 void YTLPresentThemeEditor(void) {
     UIViewController *presenter = [YTLClass(@"YTUIUtils") topViewControllerForPresenting];
     if (!presenter) return;
@@ -963,13 +1015,8 @@ void YTLPresentThemeEditor(void) {
 %ctor {
     if (YTLSafeModeActive()) return;
     YTLThemeConfig();
-    [[NSNotificationCenter defaultCenter] addObserverForName:UIWindowDidBecomeKeyNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
-        YTLThemeInstall(note.object);
-    }];
-    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
-        YTLThemeInstallAll();
-    }];
     [[NSNotificationCenter defaultCenter] addObserverForName:kThemeChanged object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
         YTLThemeRefreshAll();
     }];
+    %init;
 }
