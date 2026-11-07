@@ -549,10 +549,72 @@ static void YTLThemeRefreshAll(void) {
     }
 }
 
+static BOOL YTLIsPageColor(UIColor *color) {
+    if (!color) return NO;
+    CGFloat h = 0, sat = 0, b = 0, a = 0;
+    if (![color getHue:&h saturation:&sat brightness:&b alpha:&a]) {
+        CGFloat w = 0;
+        if (![color getWhite:&w alpha:&a]) return NO;
+        b = w;
+        sat = 0;
+    }
+    return a > 0.9 && sat < 0.25 && (b < 0.16 || b > 0.95);
+}
+
+static BOOL YTLSkipThemeClear(UIView *view) {
+    if ([view isKindOfClass:[YTLThemeView class]] || [view isKindOfClass:[UIImageView class]] || [view isKindOfClass:[UIVisualEffectView class]] || [view isKindOfClass:[UIControl class]]) return YES;
+    NSString *name = NSStringFromClass([view class]);
+    for (NSString *word in @[@"Player", @"Video", @"Thumbnail", @"Image", @"Avatar", @"Keyboard", @"Camera", @"Glass", @"Reel", @"Shorts"]) {
+        if ([name rangeOfString:word].location != NSNotFound) return YES;
+    }
+    return NO;
+}
+
+static void YTLClearPageBackgrounds(UIView *root) {
+    CGSize rootSize = root.bounds.size;
+    if (rootSize.width <= 0 || rootSize.height <= 0) return;
+    NSMutableArray <UIView *> *queue = [NSMutableArray arrayWithArray:root.subviews];
+    NSMutableArray <NSNumber *> *depths = [NSMutableArray array];
+    for (NSUInteger i = 0; i < queue.count; i++) [depths addObject:@1];
+    NSUInteger visited = 0;
+    while (queue.count && visited < 600) {
+        UIView *view = queue.firstObject;
+        NSInteger depth = depths.firstObject.integerValue;
+        [queue removeObjectAtIndex:0];
+        [depths removeObjectAtIndex:0];
+        visited++;
+        if (view.hidden || YTLSkipThemeClear(view)) continue;
+
+        CGSize size = view.bounds.size;
+        if (size.width >= rootSize.width * 0.85 && size.height >= rootSize.height * 0.2 && YTLIsPageColor(view.backgroundColor)) {
+            view.backgroundColor = [UIColor clearColor];
+            id node = YTLValue(view, @"asyncdisplaykit_node");
+            if ([node respondsToSelector:@selector(setBackgroundColor:)]) [node setBackgroundColor:[UIColor clearColor]];
+        }
+        if (depth >= 16 || size.width < rootSize.width * 0.5) continue;
+        for (UIView *subview in view.subviews) {
+            [queue addObject:subview];
+            [depths addObject:@(depth + 1)];
+        }
+    }
+}
+
+static const char kThemeClearTimeKey;
+
+static void YTLThemeClearIfNeeded(UIView *root) {
+    if (!ytlBool(@"themeEnabled")) return;
+    CFTimeInterval now = CACurrentMediaTime();
+    NSNumber *last = objc_getAssociatedObject(root, &kThemeClearTimeKey);
+    if (last && now - last.doubleValue < 0.4) return;
+    objc_setAssociatedObject(root, &kThemeClearTimeKey, @(now), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    YTLClearPageBackgrounds(root);
+}
+
 %hook YTAppView
 - (void)layoutSubviews {
     %orig;
     YTLThemeBackdrop((UIView *)(id)self, YTLHostIsDark((UIView *)(id)self));
+    YTLThemeClearIfNeeded((UIView *)(id)self);
 }
 %end
 
@@ -560,6 +622,7 @@ static void YTLThemeRefreshAll(void) {
 - (void)layoutSubviews {
     %orig;
     YTLThemeBackdrop((UIView *)(id)self, YTLHostIsDark((UIView *)(id)self));
+    YTLThemeClearIfNeeded((UIView *)(id)self);
 }
 %end
 
@@ -991,6 +1054,16 @@ static void YTLThemeRefreshAll(void) {
 }
 
 @end
+
+%hook YTBaseInnerTubeViewController
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    if (!ytlBool(@"themeEnabled")) return;
+    UIView *view = ((UIViewController *)(id)self).viewIfLoaded;
+    if (YTLIsPageColor(view.backgroundColor)) view.backgroundColor = [UIColor clearColor];
+    if (view) YTLClearPageBackgrounds(view);
+}
+%end
 
 %hook YTSearchViewController
 - (void)viewDidLoad {
