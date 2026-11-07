@@ -474,6 +474,28 @@ static NSString *const kYTLCosmeticScript = @"(function(){"
     "new MutationObserver(run).observe(document.documentElement,{childList:true,subtree:true});"
     "})();";
 
+static NSString *const kYTLMovixScript = @"(function(){"
+    "var anc=location.ancestorOrigins?Array.prototype.join.call(location.ancestorOrigins,' '):'';"
+    "if(!/movix/i.test(location.hostname+' '+anc))return;"
+    "if(window.__ytlMovix)return;window.__ytlMovix=1;"
+    "try{window.open=function(){return null;};}catch(x){}"
+    "var SHORT=/(^|\\.)(ja\\.cat|bit\\.ly|tinyurl\\.com|cutt\\.ly|shorturl\\.at|t\\.ly|is\\.gd|rebrand\\.ly|bc\\.vc|ouo\\.io|ouo\\.press|shrinkme\\.io|exe\\.io|adf\\.ly|linkvertise\\.com|clk\\.sh)$/i;"
+    "var ADW=/(^|[-_\\s])(ads?|advert\\w*|sponsor\\w*|publicite|casino|vpn)([-_\\s]|$)/i;"
+    "function hide(e){if(e&&e!==document.body&&e!==document.documentElement)e.style.setProperty('display','none','important');}"
+    "function trap(e){var cs=getComputedStyle(e);if(cs.position!=='fixed'&&cs.position!=='absolute')return false;"
+    "var r=e.getBoundingClientRect();if(r.width<innerWidth*0.6||r.height<innerHeight*0.5)return false;"
+    "if(e.querySelector('video,iframe,canvas,img,svg,button,input,select,textarea'))return false;if((e.innerText||'').trim().length)return false;"
+    "var bg=cs.backgroundColor;return parseFloat(cs.opacity)<0.1||bg==='transparent'||/rgba\\(.*,\\s*0\\)$/.test(bg);}"
+    "function clean(){"
+    "document.querySelectorAll('a[href]').forEach(function(a){try{if(SHORT.test(new URL(a.href,location.href).hostname))hide(a.closest('li,article,[class*=comment]')||a);}catch(x){}});"
+    "document.querySelectorAll('[id],[class]').forEach(function(e){var s=(e.id||'')+' '+(typeof e.className==='string'?e.className:'');if(ADW.test(s)&&!e.querySelector('video'))hide(e);});"
+    "document.querySelectorAll('body > div, body > a, body > span').forEach(function(e){if(trap(e))e.remove();});"
+    "document.querySelectorAll('iframe').forEach(function(f){var r=f.getBoundingClientRect();if(r.width<=2&&r.height<=2)f.remove();});}"
+    "var t;function run(){clearTimeout(t);t=setTimeout(function(){try{clean();}catch(e){}},200);}"
+    "if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',run);else run();"
+    "new MutationObserver(run).observe(document.documentElement,{childList:true,subtree:true});"
+    "})();";
+
 #pragma mark - Site view controller
 
 @interface YTLSiteViewController : UIViewController <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler>
@@ -573,6 +595,7 @@ static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hos
     if (ytlBool(@"siteAdBlock")) {
         [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:kYTLPopupGuardScript injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO]];
         [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:kYTLCosmeticScript injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:NO]];
+        [configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:kYTLMovixScript injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO]];
     }
     if (!siteVisitedHosts) siteVisitedHosts = [NSMutableSet set];
     for (NSString *entry in YTLSiteList()) {
