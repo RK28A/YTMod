@@ -240,7 +240,7 @@ static void YTLPromptAddSite(void (^completion)(NSURL *url)) {
     ]];
 
     CGFloat width = MIN(270, CGRectGetWidth(host.bounds) - 24);
-    CGFloat contentHeight = [stack systemLayoutSizeFittingSize:CGSizeMake(width, UILayoutFittingCompressedSize.height) withHorizontalFittingPriority:UILayoutPriorityRequired verticalFittingPriority:UILayoutPriorityFittingSizeLevel].height + 8;
+    CGFloat contentHeight = items.count * 52 + (items.count - 1) * 0.5 + 8;
     UIEdgeInsets safe = host.safeAreaInsets;
     CGFloat below = CGRectGetHeight(host.bounds) - safe.bottom - CGRectGetMaxY(rect) - 18;
     CGFloat above = CGRectGetMinY(rect) - safe.top - 18;
