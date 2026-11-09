@@ -68,7 +68,7 @@ static UIImage *YTImageNamed(NSString *imageName) {
 %end
 
 static BOOL YTLHideShorts(void) {
-    return ytlBool(@"hideShorts") || ytlBool(@"filterShorts");
+    return ytlBool(@"hideShorts");
 }
 
 static BOOL YTLIsPollDescription(NSString *description) {

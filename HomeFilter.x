@@ -9,7 +9,7 @@ static const char kFilterButtonKey;
 
 static UIImage *YTLFilterIcon(void) {
     UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightRegular];
-    BOOL active = ytlBool(@"filterShorts") || ytlBool(@"filterPolls");
+    BOOL active = ytlBool(@"filterPolls");
     return [UIImage systemImageNamed:active ? @"line.3.horizontal.decrease.circle.fill" : @"line.3.horizontal.decrease.circle" withConfiguration:config];
 }
 
@@ -18,7 +18,7 @@ static void YTLPresentFilterMenu(UIView *source) {
     YTDefaultSheetController *sheet = [YTLClass(@"YTDefaultSheetController") sheetControllerWithParentResponder:nil];
     if (!sheet || !presenter) return;
 
-    NSArray <NSArray <NSString *> *> *filters = @[@[@"filterShorts", @"FilterShorts"], @[@"filterPolls", @"FilterPolls"]];
+    NSArray <NSArray <NSString *> *> *filters = @[@[@"filterPolls", @"FilterPolls"]];
     for (NSArray <NSString *> *filter in filters) {
         NSString *key = filter[0];
         NSString *title = [NSString stringWithFormat:@"%@  %@", ytlBool(key) ? @"✓" : @"○", LOC(filter[1])];
