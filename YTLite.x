@@ -172,6 +172,88 @@ static UIColor *YTLOLEDColor(UIColor *color) {
 
 FOUNDATION_EXPORT UIColor *YTLThemePaletteColor(NSInteger level, BOOL dark);
 
+FOUNDATION_EXPORT void YTLPresentDownloadsLibrary(void);
+
+BOOL YTLIsPremiumUpsell(NSString *text) {
+    if (![text isKindOfClass:[NSString class]] || text.length == 0 || text.length > 70) return NO;
+    NSString *lower = text.lowercaseString;
+    if ([lower rangeOfString:@"premium"].location == NSNotFound) return NO;
+    for (NSString *word in @[@"abonne", @"essai", @"essayer", @"obtenir", @"passer à", @"rejoindre", @"subscribe", @"try ", @"get youtube", @"join", @"upgrade", @"free trial", @"découvrir", @"profitez"]) {
+        if ([lower rangeOfString:word].location != NSNotFound) return YES;
+    }
+    return NO;
+}
+
+static const char kYTLDownloadsTapKey;
+static const char kYTLScanTimeKey;
+
+@interface YTLDownloadsTapTarget : NSObject
+@end
+
+@implementation YTLDownloadsTapTarget
++ (instancetype)shared {
+    static YTLDownloadsTapTarget *target;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ target = [YTLDownloadsTapTarget new]; });
+    return target;
+}
+
+- (void)tapped:(UITapGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateEnded) YTLPresentDownloadsLibrary();
+}
+@end
+
+static void YTLScanInterface(UIView *root) {
+    BOOL hidePromo = ytlBool(@"hidePremiumPromo");
+    BOOL downloads = ytlBool(@"downloadButton");
+    if (!hidePromo && !downloads) return;
+    CFTimeInterval now = CACurrentMediaTime();
+    NSNumber *last = objc_getAssociatedObject(root, &kYTLScanTimeKey);
+    if (last && now - last.doubleValue < 0.5) return;
+    objc_setAssociatedObject(root, &kYTLScanTimeKey, @(now), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    NSMutableArray <UIView *> *queue = [NSMutableArray arrayWithArray:root.subviews];
+    NSUInteger index = 0;
+    while (index < queue.count && index < 1500) {
+        UIView *view = queue[index++];
+        if (view.hidden || view.alpha < 0.01) continue;
+        CGSize size = view.bounds.size;
+        NSString *label = view.accessibilityLabel;
+        if (label.length && size.height < 110) {
+            if (hidePromo && YTLIsPremiumUpsell(label)) {
+                view.hidden = YES;
+                continue;
+            }
+            if (downloads && size.width > 120 && !objc_getAssociatedObject(view, &kYTLDownloadsTapKey)) {
+                NSString *lower = label.lowercaseString;
+                if ([lower hasPrefix:@"téléchargements"] || [lower hasPrefix:@"downloads"]) {
+                    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:[YTLDownloadsTapTarget shared] action:@selector(tapped:)];
+                    tap.cancelsTouchesInView = YES;
+                    [view addGestureRecognizer:tap];
+                    view.userInteractionEnabled = YES;
+                    objc_setAssociatedObject(view, &kYTLDownloadsTapKey, tap, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                }
+            }
+        }
+        [queue addObjectsFromArray:view.subviews];
+    }
+}
+
+%hook YTAppView
+- (void)layoutSubviews {
+    %orig;
+    YTLScanInterface((UIView *)(id)self);
+}
+%end
+
+%hook YTSettingsViewController
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    UIView *view = ((UIViewController *)(id)self).viewIfLoaded;
+    if (view) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ YTLScanInterface(view); });
+}
+%end
+
 static id YTLSafeResponder(id responder) {
     if (!responder || [responder respondsToSelector:@selector(parentResponder)]) return responder;
     if ([responder isKindOfClass:[UIViewController class]]) {

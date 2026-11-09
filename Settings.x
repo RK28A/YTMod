@@ -195,8 +195,21 @@ static YTSettingsSectionItem *YTLDeepBlackItem(void) {
     return item;
 }
 
+FOUNDATION_EXPORT BOOL YTLIsPremiumUpsell(NSString *text);
+
 static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
     if (category == YTLiteSection || ![items isKindOfClass:[NSArray class]]) return items;
+    if (ytlBool(@"hidePremiumPromo")) {
+        NSIndexSet *promos = [items indexesOfObjectsPassingTest:^BOOL(id item, NSUInteger idx, BOOL *stop) {
+            id title = YTLValue(item, @"title");
+            return [title isKindOfClass:[NSString class]] && YTLIsPremiumUpsell(title);
+        }];
+        if (promos.count) {
+            NSMutableArray *filtered = [items mutableCopy];
+            [filtered removeObjectsAtIndexes:promos];
+            items = filtered;
+        }
+    }
     NSUInteger themeIndex = NSNotFound;
     for (NSUInteger i = 0; i < items.count; i++) {
         id item = items[i];
@@ -416,6 +429,7 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
             [self switchWithTitle:@"RemoveAds" key:@"noAds"],
             [self switchWithTitle:@"SkipAdShorts" key:@"skipAdShorts"],
             [self switchWithTitle:@"NoPromotionCards" key:@"noPromotionCards"],
+                [self switchWithTitle:@"HidePremiumPromo" key:@"hidePremiumPromo"],
             [self switchWithTitle:@"HideShortsPromoCards" key:@"hideShortsPromoCards"],
             [self switchWithTitle:@"NoWatermarks" key:@"noWatermarks"]
         ];

@@ -208,3 +208,14 @@
 "PresetNight" = "Nuit étoilée";
 "SiteAdBlock" = "Bloquer les pubs et popups";
 "SiteAdBlockDesc" = "Bloque les régies pub, les popups et les redirections vers des sites de pub sur les sites web. Rouvre le site pour appliquer";
+"MyDownloads" = "Mes téléchargements";
+"NoDownloads" = "Aucun téléchargement.\nTélécharge une vidéo depuis sa description ou depuis le menu d'un Short.";
+"OpenMyDownloads" = "Ouvrir mes téléchargements";
+"SaveToPhotos" = "Enregistrer dans Photos";
+"SavedToPhotos" = "Enregistré dans Photos";
+"PhotosDenied" = "Autorise l'accès à Photos dans les Réglages pour enregistrer les vidéos";
+"Share" = "Partager";
+"Delete" = "Supprimer";
+"DownloadSaved" = "Téléchargement enregistré dans Mes téléchargements";
+"HidePremiumPromo" = "Masquer les offres YouTube Premium";
+"HidePremiumPromoDesc" = "Retire les boutons et lignes qui proposent de s'abonner à YouTube Premium";

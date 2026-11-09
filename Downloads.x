@@ -1,6 +1,8 @@
 #import "YTLite.h"
 #import "Utils/YTLSafeMode.h"
 #import <AVFoundation/AVFoundation.h>
+#import <AVKit/AVKit.h>
+#import <Photos/Photos.h>
 
 static __weak YTPlayerViewController *ytlWatchPlayer;
 static __weak YTPlayerViewController *ytlShortsPlayer;
@@ -179,6 +181,256 @@ static NSURL *YTLDownloadsDirectory(void) {
     return dir;
 }
 
+
+#pragma mark - Library
+
+static NSURL *YTLLibraryDirectory(void) {
+    NSURL *documents = [[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
+    NSURL *dir = [documents URLByAppendingPathComponent:@"YTModulation/Downloads" isDirectory:YES];
+    [[NSFileManager defaultManager] createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:@{NSFileProtectionKey: NSFileProtectionNone} error:nil];
+    return dir;
+}
+
+static NSDictionary *YTLDownloadMeta(YTPlayerViewController *player) {
+    id details = YTLPlayerDetails(player);
+    NSMutableDictionary *meta = [NSMutableDictionary dictionary];
+    meta[@"videoID"] = player.contentVideoID ?: YTLStringValue(details, @"videoId") ?: [NSUUID UUID].UUIDString;
+    meta[@"title"] = YTLStringValue(details, @"title") ?: meta[@"videoID"];
+    meta[@"channel"] = YTLStringValue(details, @"author") ?: @"";
+    meta[@"duration"] = @(YTLLongValue(details, @"lengthSeconds"));
+    meta[@"date"] = @([[NSDate date] timeIntervalSince1970]);
+    return meta;
+}
+
+static NSArray <NSDictionary *> *YTLLibraryItems(void) {
+    NSURL *dir = YTLLibraryDirectory();
+    NSArray <NSURL *> *files = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:dir includingPropertiesForKeys:nil options:NSDirectoryEnumerationSkipsHiddenFiles error:nil];
+    NSMutableArray *items = [NSMutableArray array];
+    for (NSURL *file in files) {
+        if (![file.pathExtension isEqualToString:@"json"]) continue;
+        NSDictionary *meta = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:file] ?: [NSData data] options:0 error:nil];
+        if (![meta isKindOfClass:[NSDictionary class]]) continue;
+        NSURL *media = [dir URLByAppendingPathComponent:meta[@"file"] ?: @""];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:media.path]) continue;
+        NSMutableDictionary *item = [meta mutableCopy];
+        item[@"mediaURL"] = media;
+        item[@"metaURL"] = file;
+        NSURL *thumb = [dir URLByAppendingPathComponent:meta[@"thumb"] ?: @""];
+        if (meta[@"thumb"] && [[NSFileManager defaultManager] fileExistsAtPath:thumb.path]) item[@"thumbURL"] = thumb;
+        [items addObject:item];
+    }
+    [items sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [b[@"date"] compare:a[@"date"] ?: @0];
+    }];
+    return items;
+}
+
+static NSURL *YTLStoreInLibrary(NSURL *file, NSDictionary *meta) {
+    NSURL *dir = YTLLibraryDirectory();
+    NSString *base = [NSString stringWithFormat:@"%@-%ld", YTLSafeFileName(meta[@"videoID"]), (long)[[NSDate date] timeIntervalSince1970]];
+    NSURL *target = [dir URLByAppendingPathComponent:[base stringByAppendingPathExtension:file.pathExtension ?: @"mp4"]];
+    if (![[NSFileManager defaultManager] moveItemAtURL:file toURL:target error:nil]) return nil;
+
+    NSMutableDictionary *saved = [meta mutableCopy];
+    saved[@"file"] = target.lastPathComponent;
+    saved[@"audioOnly"] = @([file.pathExtension isEqualToString:@"m4a"]);
+    NSString *thumbName = [base stringByAppendingPathExtension:@"jpg"];
+    saved[@"thumb"] = thumbName;
+    [[NSJSONSerialization dataWithJSONObject:saved options:0 error:nil] writeToURL:[dir URLByAppendingPathComponent:[base stringByAppendingPathExtension:@"json"]] atomically:YES];
+
+    NSURL *thumbURL = [NSURL URLWithString:[NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/hqdefault.jpg", meta[@"videoID"]]];
+    if (thumbURL) {
+        [[[NSURLSession sharedSession] dataTaskWithURL:thumbURL completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            if (data.length > 1000) [data writeToURL:[dir URLByAppendingPathComponent:thumbName] atomically:YES];
+        }] resume];
+    }
+    return target;
+}
+
+static void YTLSaveToPhotos(NSURL *file, UIViewController *presenter) {
+    [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus status) {
+        if (status != PHAuthorizationStatusAuthorized && status != (PHAuthorizationStatus)4) {
+            dispatch_async(dispatch_get_main_queue(), ^{ [[YTLClass(@"YTToastResponderEvent") eventWithMessage:LOC(@"PhotosDenied") firstResponder:presenter] send]; });
+            return;
+        }
+        [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
+            [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:file];
+        } completionHandler:^(BOOL success, NSError *error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [[YTLClass(@"YTToastResponderEvent") eventWithMessage:LOC(success ? @"SavedToPhotos" : @"DownloadFailed") firstResponder:presenter] send];
+            });
+        }];
+    }];
+}
+
+static void YTLShareCopy(NSURL *file, UIViewController *presenter, UIView *source) {
+    UIActivityViewController *activity = [[UIActivityViewController alloc] initWithActivityItems:@[file] applicationActivities:nil];
+    if (activity.popoverPresentationController) {
+        activity.popoverPresentationController.sourceView = source ?: presenter.view;
+        activity.popoverPresentationController.sourceRect = source ? source.bounds : CGRectMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds), 0, 0);
+    }
+    [presenter presentViewController:activity animated:YES completion:nil];
+}
+
+static NSString *YTLDurationText(NSInteger seconds) {
+    if (seconds <= 0) return @"";
+    if (seconds >= 3600) return [NSString stringWithFormat:@"%ld:%02ld:%02ld", (long)(seconds / 3600), (long)((seconds / 60) % 60), (long)(seconds % 60)];
+    return [NSString stringWithFormat:@"%ld:%02ld", (long)(seconds / 60), (long)(seconds % 60)];
+}
+
+@interface YTLDownloadsViewController : UITableViewController
+@property (nonatomic, copy) NSArray <NSDictionary *> *items;
+@end
+
+@implementation YTLDownloadsViewController
+
+- (instancetype)init {
+    return [super initWithStyle:UITableViewStyleInsetGrouped];
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = LOC(@"MyDownloads");
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(done)];
+    self.tableView.rowHeight = 78;
+    [self reload];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self reload];
+}
+
+- (void)reload {
+    self.items = YTLLibraryItems();
+    UILabel *empty = nil;
+    if (self.items.count == 0) {
+        empty = [UILabel new];
+        empty.text = LOC(@"NoDownloads");
+        empty.textAlignment = NSTextAlignmentCenter;
+        empty.numberOfLines = 0;
+        empty.textColor = [UIColor secondaryLabelColor];
+    }
+    self.tableView.backgroundView = empty;
+    [self.tableView reloadData];
+}
+
+- (void)done {
+    [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    return self.items.count;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"item"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"item"];
+    NSDictionary *item = self.items[indexPath.row];
+    cell.textLabel.text = item[@"title"];
+    cell.textLabel.numberOfLines = 2;
+    cell.textLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+    NSMutableArray *parts = [NSMutableArray array];
+    if ([item[@"channel"] length]) [parts addObject:item[@"channel"]];
+    NSString *duration = YTLDurationText([item[@"duration"] integerValue]);
+    if (duration.length) [parts addObject:duration];
+    NSNumber *size = [[NSFileManager defaultManager] attributesOfItemAtPath:[item[@"mediaURL"] path] error:nil][NSFileSize];
+    if (size) [parts addObject:[NSByteCountFormatter stringFromByteCount:size.longLongValue countStyle:NSByteCountFormatterCountStyleFile]];
+    if ([item[@"audioOnly"] boolValue]) [parts addObject:@"M4A"];
+    cell.detailTextLabel.text = [parts componentsJoinedByString:@" · "];
+    cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+    UIImage *thumb = item[@"thumbURL"] ? [UIImage imageWithContentsOfFile:[item[@"thumbURL"] path]] : nil;
+    CGSize size2 = CGSizeMake(96, 54);
+    cell.imageView.image = [[[UIGraphicsImageRenderer alloc] initWithSize:size2] imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [[UIBezierPath bezierPathWithRoundedRect:(CGRect){CGPointZero, size2} cornerRadius:8] addClip];
+        [[UIColor tertiarySystemFillColor] setFill];
+        UIRectFill((CGRect){CGPointZero, size2});
+        if (thumb) {
+            CGFloat scale = MAX(size2.width / thumb.size.width, size2.height / thumb.size.height);
+            CGSize drawn = CGSizeMake(thumb.size.width * scale, thumb.size.height * scale);
+            [thumb drawInRect:CGRectMake((size2.width - drawn.width) / 2, (size2.height - drawn.height) / 2, drawn.width, drawn.height)];
+        }
+    }];
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    NSDictionary *item = self.items[indexPath.row];
+    AVPlayerViewController *playerController = [AVPlayerViewController new];
+    playerController.player = [AVPlayer playerWithURL:item[@"mediaURL"]];
+    [self presentViewController:playerController animated:YES completion:^{ [playerController.player play]; }];
+}
+
+- (UIContextMenuConfiguration *)tableView:(UITableView *)tableView contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath point:(CGPoint)point {
+    NSDictionary *item = self.items[indexPath.row];
+    __weak YTLDownloadsViewController *weakSelf = self;
+    return [UIContextMenuConfiguration configurationWithIdentifier:nil previewProvider:nil actionProvider:^UIMenu *(NSArray <UIMenuElement *> *suggested) {
+        NSMutableArray *actions = [NSMutableArray array];
+        if (![item[@"audioOnly"] boolValue]) {
+            [actions addObject:[UIAction actionWithTitle:LOC(@"SaveToPhotos") image:[UIImage systemImageNamed:@"photo.on.rectangle"] identifier:nil handler:^(UIAction *action) {
+                YTLSaveToPhotos(item[@"mediaURL"], weakSelf);
+            }]];
+        }
+        [actions addObject:[UIAction actionWithTitle:LOC(@"Share") image:[UIImage systemImageNamed:@"square.and.arrow.up"] identifier:nil handler:^(UIAction *action) {
+            YTLShareCopy(item[@"mediaURL"], weakSelf, [tableView cellForRowAtIndexPath:indexPath]);
+        }]];
+        UIAction *remove = [UIAction actionWithTitle:LOC(@"Delete") image:[UIImage systemImageNamed:@"trash"] identifier:nil handler:^(UIAction *action) {
+            [weakSelf deleteItem:item];
+        }];
+        remove.attributes = UIMenuElementAttributesDestructive;
+        [actions addObject:remove];
+        return [UIMenu menuWithTitle:@"" children:actions];
+    }];
+}
+
+- (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
+    NSDictionary *item = self.items[indexPath.row];
+    __weak YTLDownloadsViewController *weakSelf = self;
+    UIContextualAction *remove = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive title:LOC(@"Delete") handler:^(UIContextualAction *action, UIView *view, void (^completion)(BOOL)) {
+        [weakSelf deleteItem:item];
+        completion(YES);
+    }];
+    return [UISwipeActionsConfiguration configurationWithActions:@[remove]];
+}
+
+- (void)deleteItem:(NSDictionary *)item {
+    for (NSString *key in @[@"mediaURL", @"metaURL", @"thumbURL"]) {
+        if (item[key]) [[NSFileManager defaultManager] removeItemAtURL:item[key] error:nil];
+    }
+    [self reload];
+}
+
+@end
+
+void YTLPresentDownloadsLibrary(void) {
+    UIViewController *presenter = [YTLClass(@"YTUIUtils") topViewControllerForPresenting];
+    if (!presenter) return;
+    UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:[YTLDownloadsViewController new]];
+    navigation.modalPresentationStyle = UIModalPresentationFullScreen;
+    [presenter presentViewController:navigation animated:YES completion:nil];
+}
+
+static void YTLAfterDownload(NSURL *stored, UIViewController *presenter) {
+    YTDefaultSheetController *sheet = [YTLClass(@"YTDefaultSheetController") sheetControllerWithParentResponder:nil];
+    UIViewController *top = [YTLClass(@"YTUIUtils") topViewControllerForPresenting] ?: presenter;
+    if (!sheet || !top) return;
+    [sheet addAction:[YTLClass(@"YTActionSheetAction") actionWithTitle:LOC(@"OpenMyDownloads") iconImage:[UIImage systemImageNamed:@"arrow.down.circle"] style:0 handler:^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ YTLPresentDownloadsLibrary(); });
+    }]];
+    if (![stored.pathExtension isEqualToString:@"m4a"]) {
+        [sheet addAction:[YTLClass(@"YTActionSheetAction") actionWithTitle:LOC(@"SaveToPhotos") iconImage:[UIImage systemImageNamed:@"photo.on.rectangle"] style:0 handler:^{
+            YTLSaveToPhotos(stored, top);
+        }]];
+    }
+    [sheet addAction:[YTLClass(@"YTActionSheetAction") actionWithTitle:LOC(@"Share") iconImage:[UIImage systemImageNamed:@"square.and.arrow.up"] style:0 handler:^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            YTLShareCopy(stored, [YTLClass(@"YTUIUtils") topViewControllerForPresenting] ?: top, nil);
+        });
+    }]];
+    [sheet presentFromViewController:top animated:YES completion:nil];
+    [[YTLClass(@"YTToastResponderEvent") eventWithMessage:LOC(@"DownloadSaved") firstResponder:top] send];
+}
+
 static void YTLShareFile(NSURL *file, UIViewController *presenter) {
     UIActivityViewController *activity = [[UIActivityViewController alloc] initWithActivityItems:@[file] applicationActivities:nil];
     activity.completionWithItemsHandler = ^(UIActivityType type, BOOL completed, NSArray *items, NSError *error) {
@@ -192,7 +444,7 @@ static void YTLShareFile(NSURL *file, UIViewController *presenter) {
     [presenter presentViewController:activity animated:YES completion:nil];
 }
 
-static void YTLFinish(YTLDownloadTask *task, UIViewController *presenter, NSURL *file, NSError *error) {
+static void YTLFinish(YTLDownloadTask *task, UIViewController *presenter, NSURL *file, NSError *error, NSDictionary *meta) {
     dispatch_async(dispatch_get_main_queue(), ^{
         [task.alert dismissViewControllerAnimated:YES completion:^{
             if (error) {
@@ -202,7 +454,9 @@ static void YTLFinish(YTLDownloadTask *task, UIViewController *presenter, NSURL 
                 }
                 return;
             }
-            YTLShareFile(file, presenter);
+            NSURL *stored = meta ? YTLStoreInLibrary(file, meta) : nil;
+            if (stored) YTLAfterDownload(stored, presenter);
+            else YTLShareFile(file, presenter);
         }];
     });
 }
@@ -271,6 +525,7 @@ static void YTLDownloadVideo(YTPlayerViewController *player, id videoFormat, UIV
 
     NSString *name = YTLSafeFileName(YTLStringValue(YTLPlayerDetails(player), @"title") ?: player.contentVideoID);
     NSURL *dir = YTLDownloadsDirectory();
+    NSDictionary *meta = YTLDownloadMeta(player);
     NSURL *videoFile = [dir URLByAppendingPathComponent:@"video.part.mp4"];
     NSURL *audioFile = [dir URLByAppendingPathComponent:@"audio.part.m4a"];
     NSURL *output = [dir URLByAppendingPathComponent:[name stringByAppendingPathExtension:@"mp4"]];
@@ -285,14 +540,14 @@ static void YTLDownloadVideo(YTPlayerViewController *player, id videoFormat, UIV
     };
 
     [task downloadURL:videoURL length:videoLength to:videoFile completion:^(NSError *error) {
-        if (error) { cleanup(); YTLFinish(task, presenter, nil, error); return; }
+        if (error) { cleanup(); YTLFinish(task, presenter, nil, error, nil); return; }
         [task downloadURL:audioURL length:audioLength to:audioFile completion:^(NSError *error) {
-            if (error) { cleanup(); YTLFinish(task, presenter, nil, error); return; }
+            if (error) { cleanup(); YTLFinish(task, presenter, nil, error, nil); return; }
             task.status = LOC(@"Saving");
             [task updateProgress];
             YTLMux(videoFile, audioFile, output, ^(NSError *error) {
                 cleanup();
-                YTLFinish(task, presenter, output, error);
+                YTLFinish(task, presenter, output, error, meta);
             });
         }];
     }];
@@ -308,12 +563,13 @@ static void YTLDownloadAudio(YTPlayerViewController *player, UIViewController *p
 
     NSString *name = YTLSafeFileName(YTLStringValue(YTLPlayerDetails(player), @"title") ?: player.contentVideoID);
     NSURL *output = [YTLDownloadsDirectory() URLByAppendingPathComponent:[name stringByAppendingPathExtension:@"m4a"]];
+    NSDictionary *meta = YTLDownloadMeta(player);
     YTLDownloadTask *task = YTLStartTask(presenter);
     task.totalBytes = YTLFormatLength(audioFormat);
 
     [task downloadURL:audioURL length:task.totalBytes to:output completion:^(NSError *error) {
         if (error) [[NSFileManager defaultManager] removeItemAtURL:output error:nil];
-        YTLFinish(task, presenter, output, error);
+        YTLFinish(task, presenter, output, error, meta);
     }];
 }
 
@@ -383,6 +639,10 @@ void YTLPresentDownloadMenu(UIViewController *presenter) {
 
     [sheet addAction:[YTLClass(@"YTActionSheetAction") actionWithTitle:LOC(@"DownloadThumbnail") iconImage:YTLIcon(@"yt_outline_image_24pt") style:0 handler:^{
         YTLDownloadThumbnail(videoID, presenter);
+    }]];
+
+    [sheet addAction:[YTLClass(@"YTActionSheetAction") actionWithTitle:LOC(@"MyDownloads") iconImage:[UIImage systemImageNamed:@"arrow.down.circle"] style:0 handler:^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ YTLPresentDownloadsLibrary(); });
     }]];
 
     [sheet presentFromViewController:presenter animated:YES completion:nil];
