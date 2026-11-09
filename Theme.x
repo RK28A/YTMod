@@ -589,7 +589,7 @@ static BOOL YTLIsPageColor(UIColor *color) {
 static BOOL YTLSkipThemeClear(UIView *view) {
     if ([view isKindOfClass:[YTLThemeView class]] || [view isKindOfClass:[UIImageView class]] || [view isKindOfClass:[UIVisualEffectView class]] || [view isKindOfClass:[UIControl class]]) return YES;
     NSString *name = NSStringFromClass([view class]);
-    for (NSString *word in @[@"Player", @"Video", @"Thumbnail", @"Image", @"Avatar", @"Keyboard", @"Camera", @"Glass", @"Reel", @"Shorts"]) {
+    for (NSString *word in @[@"Player", @"Video", @"Thumbnail", @"Image", @"Avatar", @"Keyboard", @"Camera", @"Glass", @"Reel", @"Shorts", @"Sheet", @"Drawer", @"Dialog", @"Menu", @"Popover", @"Toast"]) {
         if ([name rangeOfString:word].location != NSNotFound) return YES;
     }
     return NO;
@@ -648,6 +648,48 @@ static void YTLThemeClearIfNeeded(UIView *root) {
     %orig;
     YTLThemeBackdrop((UIView *)(id)self, YTLHostIsDark((UIView *)(id)self));
     YTLThemeClearIfNeeded((UIView *)(id)self);
+}
+%end
+
+static void YTLThemeOpaqueSheet(UIView *view) {
+    if (!ytlBool(@"themeEnabled") || ![view isKindOfClass:[UIView class]]) return;
+    BOOL dark = view.traitCollection.userInterfaceStyle != UIUserInterfaceStyleLight;
+    UIColor *color = dark ? [UIColor colorWithRed:0.13 green:0.13 blue:0.13 alpha:1] : [UIColor colorWithRed:1 green:1 blue:1 alpha:1];
+    if (![view.backgroundColor isEqual:color]) view.backgroundColor = color;
+}
+
+%hook YTContextualSheetView
+- (void)layoutSubviews {
+    %orig;
+    YTLThemeOpaqueSheet((UIView *)(id)self);
+}
+%end
+
+%hook YTSheetContainerView
+- (void)layoutSubviews {
+    %orig;
+    YTLThemeOpaqueSheet((UIView *)(id)self);
+}
+%end
+
+%hook YTButtonSheetView
+- (void)layoutSubviews {
+    %orig;
+    YTLThemeOpaqueSheet((UIView *)(id)self);
+}
+%end
+
+%hook YTWatchNextView
+- (void)layoutSubviews {
+    %orig;
+    YTLThemeBackdrop((UIView *)(id)self, ((UIView *)(id)self).traitCollection.userInterfaceStyle != UIUserInterfaceStyleLight);
+}
+%end
+
+%hook YTWatchLayerView
+- (void)layoutSubviews {
+    %orig;
+    YTLThemeBackdrop((UIView *)(id)self, ((UIView *)(id)self).traitCollection.userInterfaceStyle != UIUserInterfaceStyleLight);
 }
 %end
 

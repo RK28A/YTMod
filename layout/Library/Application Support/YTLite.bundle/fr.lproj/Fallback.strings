@@ -195,3 +195,14 @@
 "PresetSnow" = "Neige";
 "PresetRain" = "Pluie";
 "PresetNight" = "Nuit étoilée";
+"MyDownloads" = "Mes téléchargements";
+"NoDownloads" = "Aucun téléchargement.\nTélécharge une vidéo depuis sa description ou depuis le menu d'un Short.";
+"OpenMyDownloads" = "Ouvrir mes téléchargements";
+"SaveToPhotos" = "Enregistrer dans Photos";
+"SavedToPhotos" = "Enregistré dans Photos";
+"PhotosDenied" = "Autorise l'accès à Photos dans les Réglages pour enregistrer les vidéos";
+"Share" = "Partager";
+"Delete" = "Supprimer";
+"DownloadSaved" = "Téléchargement enregistré dans Mes téléchargements";
+"HidePremiumPromo" = "Masquer les offres YouTube Premium";
+"HidePremiumPromoDesc" = "Retire les boutons et lignes qui proposent de s'abonner à YouTube Premium";

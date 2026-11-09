@@ -195,3 +195,14 @@
 "PresetSnow" = "Snow";
 "PresetRain" = "Rain";
 "PresetNight" = "Starry night";
+"MyDownloads" = "My downloads";
+"NoDownloads" = "No downloads yet.\nDownload a video from the description of a video or the menu of a Short.";
+"OpenMyDownloads" = "Open my downloads";
+"SaveToPhotos" = "Save to Photos";
+"SavedToPhotos" = "Saved to Photos";
+"PhotosDenied" = "Allow Photos access in Settings to save videos";
+"Share" = "Share";
+"Delete" = "Delete";
+"DownloadSaved" = "Download saved in My downloads";
+"HidePremiumPromo" = "Hide YouTube Premium offers";
+"HidePremiumPromoDesc" = "Removes the buttons and items asking to subscribe to YouTube Premium";
