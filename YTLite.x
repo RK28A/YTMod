@@ -321,6 +321,7 @@ static BOOL YTLNestedShouldHide(id message, NSUInteger depth) {
         YTLMarkFeedElement(message);
         return YTLElementDecision(message) != 0;
     }
+    if (YTLHideShorts() && [NSStringFromClass([message class]) hasPrefix:@"YTIReel"]) return YES;
     if (![message isKindOfClass:YTLClass(@"GPBMessage")] || ![[message class] respondsToSelector:@selector(descriptor)]) return NO;
 
     id descriptor = ((id (*)(id, SEL))objc_msgSend)([message class], @selector(descriptor));
@@ -334,14 +335,11 @@ static BOOL YTLNestedShouldHide(id message, NSUInteger depth) {
         NSInteger fieldType = [YTLValue(field, @"fieldType") integerValue];
 
         if (fieldType == 1) {
-            NSMutableArray *array = YTLValue(message, name);
-            if (![array isKindOfClass:[NSMutableArray class]] || array.count == 0) continue;
-            NSIndexSet *hidden = [array indexesOfObjectsPassingTest:^BOOL(id child, NSUInteger idx, BOOL *stop) {
-                return YTLNestedShouldHide(child, depth + 1);
-            }];
-            if (hidden.count == 0) continue;
-            [array removeObjectsAtIndexes:hidden];
-            if (array.count == 0) return YES;
+            NSArray *array = YTLValue(message, name);
+            if (![array isKindOfClass:[NSArray class]]) continue;
+            for (id child in [array copy]) {
+                if (YTLNestedShouldHide(child, depth + 1)) return YES;
+            }
         } else if (fieldType == 0) {
             NSString *hasName = [NSString stringWithFormat:@"has%@%@", [[name substringToIndex:1] uppercaseString], [name substringFromIndex:1]];
             if (!YTLHasFlag(message, NSSelectorFromString(hasName))) continue;
@@ -362,7 +360,7 @@ static BOOL YTLItemShouldHide(id item) {
         if (YTLHasFlag(content, @selector(hasElementRenderer))) renderer = YTLValue(content, @"elementRenderer");
     }
     if (![renderer isKindOfClass:rendererClass]) {
-        if (ytlBool(@"filterPolls") && YTLHasFlag(item, @selector(hasRichSectionRenderer))) {
+        if ((ytlBool(@"filterPolls") || YTLHideShorts()) && YTLHasFlag(item, @selector(hasRichSectionRenderer))) {
             @try {
                 return YTLNestedShouldHide(YTLValue(item, @"richSectionRenderer"), 0);
             } @catch (NSException *exception) {}

@@ -193,6 +193,9 @@ static CAEmitterCell *YTLParticleCell(YTLThemeEffect effect, double density, dou
 @property (nonatomic, strong) CALayer *tintLayer;
 @property (nonatomic, strong) CAEmitterLayer *emitter;
 @property (nonatomic, assign) BOOL darkTint;
+@property (nonatomic, strong) UIView *canvas;
+@property (nonatomic, assign) BOOL windowAligned;
+- (void)realign;
 @property (nonatomic, copy) NSDictionary *config;
 @property (nonatomic, copy) NSURL *loadedMedia;
 @property (nonatomic, assign) CGSize builtSize;
@@ -209,26 +212,31 @@ static CAEmitterCell *YTLParticleCell(YTLThemeEffect effect, double density, dou
     self.clipsToBounds = YES;
     self.backgroundColor = [UIColor blackColor];
 
+    _canvas = [[UIView alloc] initWithFrame:self.bounds];
+    _canvas.userInteractionEnabled = NO;
+    [self addSubview:_canvas];
+
     _container = [CALayer layer];
     _gradient = [CAGradientLayer layer];
     [_container addSublayer:_gradient];
-    [self.layer addSublayer:_container];
+    [_canvas.layer addSublayer:_container];
 
-    _imageView = [[UIImageView alloc] initWithFrame:self.bounds];
+    _imageView = [[UIImageView alloc] initWithFrame:_canvas.bounds];
     _imageView.contentMode = UIViewContentModeScaleAspectFill;
     _imageView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _imageView.clipsToBounds = YES;
     _imageView.hidden = YES;
-    [self addSubview:_imageView];
+    [_canvas addSubview:_imageView];
 
     _dimLayer = [CALayer layer];
     _dimLayer.backgroundColor = [UIColor blackColor].CGColor;
-    [self.layer addSublayer:_dimLayer];
+    [_canvas.layer addSublayer:_dimLayer];
 
     _tintLayer = [CALayer layer];
-    [self.layer addSublayer:_tintLayer];
+    [_canvas.layer addSublayer:_tintLayer];
 
     _emitter = [CAEmitterLayer layer];
-    [self.layer addSublayer:_emitter];
+    [_canvas.layer addSublayer:_emitter];
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(appDidBecomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(appWillResignActive) name:UIApplicationWillResignActiveNotification object:nil];
@@ -237,7 +245,6 @@ static CAEmitterCell *YTLParticleCell(YTLThemeEffect effect, double density, dou
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
-    [_player pause];
 }
 
 - (void)appDidBecomeActive {
@@ -256,8 +263,6 @@ static CAEmitterCell *YTLParticleCell(YTLThemeEffect effect, double density, dou
         [self.player play];
         self.builtSize = CGSizeZero;
         [self setNeedsLayout];
-    } else {
-        [self.player pause];
     }
 }
 
@@ -277,9 +282,24 @@ static CAEmitterCell *YTLParticleCell(YTLThemeEffect effect, double density, dou
     return colors;
 }
 
+- (void)realign {
+    CGRect frame = self.bounds;
+    if (self.windowAligned && self.window) {
+        CGPoint origin = [self convertPoint:CGPointZero toView:nil];
+        frame = CGRectMake(-origin.x, -origin.y, CGRectGetWidth(self.window.bounds), CGRectGetHeight(self.window.bounds));
+    }
+    if (!CGRectEqualToRect(self.canvas.frame, frame)) {
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        self.canvas.frame = frame;
+        [CATransaction commit];
+    }
+}
+
 - (void)layoutSubviews {
     [super layoutSubviews];
-    CGSize size = self.bounds.size;
+    [self realign];
+    CGSize size = self.canvas.bounds.size;
     if (size.width <= 0 || size.height <= 0 || !self.config) return;
     if (CGSizeEqualToSize(size, self.builtSize)) return;
     self.builtSize = size;
@@ -288,7 +308,7 @@ static CAEmitterCell *YTLParticleCell(YTLThemeEffect effect, double density, dou
 
 - (void)rebuild {
     NSDictionary *config = self.config;
-    CGRect bounds = self.bounds;
+    CGRect bounds = self.canvas.bounds;
     CGFloat width = CGRectGetWidth(bounds), height = CGRectGetHeight(bounds);
     CGFloat diagonal = ceil(hypot(width, height));
     YTLThemeMode mode = [config[@"mode"] integerValue];
@@ -454,14 +474,11 @@ static CAEmitterCell *YTLParticleCell(YTLThemeEffect effect, double density, dou
 
 - (void)loadMedia:(NSURL *)url mode:(YTLThemeMode)mode {
     if ([url isEqual:self.loadedMedia]) {
-        self.playerLayer.frame = self.bounds;
+        self.playerLayer.frame = self.canvas.bounds;
         return;
     }
     self.loadedMedia = url;
-    [self.player pause];
     [self.playerLayer removeFromSuperlayer];
-    self.player = nil;
-    self.looper = nil;
     self.playerLayer = nil;
     self.imageView.image = nil;
     self.imageView.hidden = YES;
@@ -470,23 +487,29 @@ static CAEmitterCell *YTLParticleCell(YTLThemeEffect effect, double density, dou
     if (mode == YTLThemeModePhoto) {
         self.imageView.image = [UIImage imageWithContentsOfFile:url.path];
         self.imageView.hidden = NO;
-        self.imageView.frame = self.bounds;
+        self.imageView.frame = self.canvas.bounds;
         return;
     }
 
-    AVPlayerItem *item = [AVPlayerItem playerItemWithURL:url];
-    self.player = [AVQueuePlayer queuePlayerWithItems:@[]];
-    self.player.muted = YES;
-    self.player.preventsDisplaySleepDuringVideoPlayback = NO;
-    if ([self.player respondsToSelector:@selector(setAudiovisualBackgroundPlaybackPolicy:)]) {
-        [self.player setValue:@2 forKey:@"audiovisualBackgroundPlaybackPolicy"];
+    static AVQueuePlayer *sharedPlayer;
+    static AVPlayerLooper *sharedLooper;
+    static NSURL *sharedURL;
+    if (![sharedURL isEqual:url]) {
+        [sharedPlayer pause];
+        sharedURL = url;
+        sharedPlayer = [AVQueuePlayer queuePlayerWithItems:@[]];
+        sharedPlayer.muted = YES;
+        sharedPlayer.preventsDisplaySleepDuringVideoPlayback = NO;
+        if ([sharedPlayer respondsToSelector:@selector(setAudiovisualBackgroundPlaybackPolicy:)]) [sharedPlayer setValue:@2 forKey:@"audiovisualBackgroundPlaybackPolicy"];
+        sharedLooper = [AVPlayerLooper playerLooperWithPlayer:sharedPlayer templateItem:[AVPlayerItem playerItemWithURL:url]];
     }
-    self.looper = [AVPlayerLooper playerLooperWithPlayer:self.player templateItem:item];
-    self.playerLayer = [AVPlayerLayer playerLayerWithPlayer:self.player];
+    self.player = sharedPlayer;
+    self.looper = sharedLooper;
+    self.playerLayer = [AVPlayerLayer playerLayerWithPlayer:sharedPlayer];
     self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
-    self.playerLayer.frame = self.bounds;
-    [self.layer insertSublayer:self.playerLayer below:self.dimLayer];
-    if (self.window) [self.player play];
+    self.playerLayer.frame = self.canvas.bounds;
+    [self.canvas.layer insertSublayer:self.playerLayer below:self.dimLayer];
+    if (self.window) [sharedPlayer play];
 }
 
 @end
@@ -520,6 +543,7 @@ static void YTLThemeBackdrop(UIView *host, BOOL dark) {
         existing.tag = kThemeViewTag;
         existing.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         existing.darkTint = dark;
+        existing.windowAligned = YES;
         [host insertSubview:existing atIndex:0];
         [existing applyConfig:YTLThemeConfig()];
         if (!themeBackdrops) themeBackdrops = [NSHashTable weakObjectsHashTable];
@@ -531,6 +555,7 @@ static void YTLThemeBackdrop(UIView *host, BOOL dark) {
         }
         if (host.subviews.firstObject != existing) [host sendSubviewToBack:existing];
         if (!CGRectEqualToRect(existing.frame, host.bounds)) existing.frame = host.bounds;
+        [existing realign];
     }
     if (host.backgroundColor && CGColorGetAlpha(host.backgroundColor.CGColor) > 0) host.backgroundColor = [UIColor clearColor];
 }
@@ -623,6 +648,25 @@ static void YTLThemeClearIfNeeded(UIView *root) {
     %orig;
     YTLThemeBackdrop((UIView *)(id)self, YTLHostIsDark((UIView *)(id)self));
     YTLThemeClearIfNeeded((UIView *)(id)self);
+}
+%end
+
+%hook YTHeaderView
+- (void)layoutSubviews {
+    %orig;
+    YTLThemeBackdrop((UIView *)(id)self, ((UIView *)(id)self).traitCollection.userInterfaceStyle != UIUserInterfaceStyleLight);
+}
+%end
+
+%hook YTSettingsViewController
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    if (!ytlBool(@"themeEnabled")) return;
+    UIView *view = ((UIViewController *)(id)self).viewIfLoaded;
+    YTLThemeBackdrop(view, view.traitCollection.userInterfaceStyle != UIUserInterfaceStyleLight);
+    UIView *collection = YTLValue(self, @"collectionView");
+    if ([collection isKindOfClass:[UIView class]]) collection.backgroundColor = [UIColor clearColor];
+    if (view) YTLClearPageBackgrounds(view);
 }
 %end
 
