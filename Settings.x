@@ -452,7 +452,6 @@ static NSArray *YTLInsertDeepBlack(NSArray *items, NSUInteger category) {
         selectBlock:^BOOL (YTSettingsCell *cell, NSUInteger arg1) {
             NSArray <YTSettingsSectionItem *> *rows = @[
                 [self switchWithTitle:@"HomeFilterBar" key:@"homeFilterBar"],
-                [self switchWithTitle:@"FilterShorts" key:@"filterShorts"],
                 [self switchWithTitle:@"FilterPolls" key:@"filterPolls"],
                 [self switchWithTitle:@"NoContinueWatching" key:@"noContinueWatching"],
                 [self switchWithTitle:@"NoSearchHistory" key:@"noSearchHistory"],
