@@ -278,8 +278,147 @@ static NSString *YTLDurationText(NSInteger seconds) {
     return [NSString stringWithFormat:@"%ld:%02ld", (long)(seconds / 60), (long)(seconds % 60)];
 }
 
+static void YTLCompressVideo(NSURL *input, NSURL *output, void (^progress)(float value), void (^completion)(NSError *error)) {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSError *error = nil;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        AVURLAsset *asset = [AVURLAsset URLAssetWithURL:input options:nil];
+        AVAssetTrack *videoTrack = [[asset tracksWithMediaType:AVMediaTypeVideo] firstObject];
+        AVAssetTrack *audioTrack = [[asset tracksWithMediaType:AVMediaTypeAudio] firstObject];
+        double duration = CMTimeGetSeconds(asset.duration);
+#pragma clang diagnostic pop
+        if (!videoTrack) {
+            completion([NSError errorWithDomain:@"YTLite" code:10 userInfo:@{NSLocalizedDescriptionKey: @"video"}]);
+            return;
+        }
+
+        AVAssetReader *reader = [AVAssetReader assetReaderWithAsset:asset error:&error];
+        [[NSFileManager defaultManager] removeItemAtURL:output error:nil];
+        AVAssetWriter *writer = reader ? [AVAssetWriter assetWriterWithURL:output fileType:AVFileTypeMPEG4 error:&error] : nil;
+        if (!reader || !writer) {
+            completion(error ?: [NSError errorWithDomain:@"YTLite" code:11 userInfo:nil]);
+            return;
+        }
+        writer.shouldOptimizeForNetworkUse = YES;
+
+        CGSize size = videoTrack.naturalSize;
+        double sourceRate = videoTrack.estimatedDataRate > 0 ? videoTrack.estimatedDataRate : 2500000;
+        double targetRate = MAX(300000, sourceRate * 0.45);
+        float fps = videoTrack.nominalFrameRate > 0 ? videoTrack.nominalFrameRate : 30;
+
+        AVAssetReaderTrackOutput *videoOutput = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:videoTrack outputSettings:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)}];
+        videoOutput.alwaysCopiesSampleData = NO;
+        AVAssetWriterInput *videoInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:@{
+            AVVideoCodecKey: AVVideoCodecTypeHEVC,
+            AVVideoWidthKey: @((int)size.width),
+            AVVideoHeightKey: @((int)size.height),
+            AVVideoCompressionPropertiesKey: @{AVVideoAverageBitRateKey: @(targetRate), AVVideoExpectedSourceFrameRateKey: @(fps)}
+        }];
+        videoInput.expectsMediaDataInRealTime = NO;
+        videoInput.transform = videoTrack.preferredTransform;
+        if (![reader canAddOutput:videoOutput] || ![writer canAddInput:videoInput]) {
+            completion([NSError errorWithDomain:@"YTLite" code:12 userInfo:@{NSLocalizedDescriptionKey: @"HEVC"}]);
+            return;
+        }
+        [reader addOutput:videoOutput];
+        [writer addInput:videoInput];
+
+        AVAssetReaderTrackOutput *audioOutput = nil;
+        AVAssetWriterInput *audioInput = nil;
+        if (audioTrack) {
+            const AudioStreamBasicDescription *asbd = NULL;
+            id description = audioTrack.formatDescriptions.firstObject;
+            if (description) asbd = CMAudioFormatDescriptionGetStreamBasicDescription((__bridge CMAudioFormatDescriptionRef)description);
+            NSInteger channels = asbd && asbd->mChannelsPerFrame > 0 ? MIN((NSInteger)asbd->mChannelsPerFrame, 2) : 2;
+            double sampleRate = asbd && asbd->mSampleRate > 0 ? asbd->mSampleRate : 44100;
+            audioOutput = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:audioTrack outputSettings:@{AVFormatIDKey: @(kAudioFormatLinearPCM), AVNumberOfChannelsKey: @(channels), AVSampleRateKey: @(sampleRate)}];
+            audioInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio outputSettings:@{AVFormatIDKey: @(kAudioFormatMPEG4AAC), AVNumberOfChannelsKey: @(channels), AVSampleRateKey: @(sampleRate), AVEncoderBitRateKey: @(channels > 1 ? 96000 : 64000)}];
+            audioInput.expectsMediaDataInRealTime = NO;
+            if ([reader canAddOutput:audioOutput] && [writer canAddInput:audioInput]) {
+                [reader addOutput:audioOutput];
+                [writer addInput:audioInput];
+            } else {
+                audioOutput = nil;
+                audioInput = nil;
+            }
+        }
+
+        if (![reader startReading] || ![writer startWriting]) {
+            completion(writer.error ?: reader.error ?: [NSError errorWithDomain:@"YTLite" code:13 userInfo:nil]);
+            return;
+        }
+        [writer startSessionAtSourceTime:kCMTimeZero];
+
+        dispatch_group_t group = dispatch_group_create();
+        dispatch_queue_t videoQueue = dispatch_queue_create("ytl.compress.video", DISPATCH_QUEUE_SERIAL);
+        dispatch_queue_t audioQueue = dispatch_queue_create("ytl.compress.audio", DISPATCH_QUEUE_SERIAL);
+
+        dispatch_group_enter(group);
+        __block BOOL videoDone = NO;
+        [videoInput requestMediaDataWhenReadyOnQueue:videoQueue usingBlock:^{
+            while (videoInput.isReadyForMoreMediaData && !videoDone) {
+                CMSampleBufferRef buffer = [videoOutput copyNextSampleBuffer];
+                if (!buffer) {
+                    videoDone = YES;
+                    [videoInput markAsFinished];
+                    dispatch_group_leave(group);
+                    break;
+                }
+                double time = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(buffer));
+                BOOL appended = [videoInput appendSampleBuffer:buffer];
+                CFRelease(buffer);
+                if (progress && duration > 0) progress(MIN(time / duration, 1));
+                if (!appended) {
+                    videoDone = YES;
+                    [videoInput markAsFinished];
+                    dispatch_group_leave(group);
+                    break;
+                }
+            }
+        }];
+
+        if (audioInput) {
+            dispatch_group_enter(group);
+            __block BOOL audioDone = NO;
+            [audioInput requestMediaDataWhenReadyOnQueue:audioQueue usingBlock:^{
+                while (audioInput.isReadyForMoreMediaData && !audioDone) {
+                    CMSampleBufferRef buffer = [audioOutput copyNextSampleBuffer];
+                    if (!buffer) {
+                        audioDone = YES;
+                        [audioInput markAsFinished];
+                        dispatch_group_leave(group);
+                        break;
+                    }
+                    BOOL appended = [audioInput appendSampleBuffer:buffer];
+                    CFRelease(buffer);
+                    if (!appended) {
+                        audioDone = YES;
+                        [audioInput markAsFinished];
+                        dispatch_group_leave(group);
+                        break;
+                    }
+                }
+            }];
+        }
+
+        dispatch_group_notify(group, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            if (reader.status == AVAssetReaderStatusFailed || writer.status == AVAssetWriterStatusFailed) {
+                [reader cancelReading];
+                [writer cancelWriting];
+                completion(writer.error ?: reader.error ?: [NSError errorWithDomain:@"YTLite" code:14 userInfo:nil]);
+                return;
+            }
+            [writer finishWritingWithCompletionHandler:^{
+                completion(writer.status == AVAssetWriterStatusCompleted ? nil : (writer.error ?: [NSError errorWithDomain:@"YTLite" code:15 userInfo:nil]));
+            }];
+        });
+    });
+}
+
 @interface YTLDownloadsViewController : UITableViewController
 @property (nonatomic, copy) NSArray <NSDictionary *> *items;
+@property (nonatomic, strong) NSMutableDictionary <NSString *, NSNumber *> *compressing;
 @end
 
 @implementation YTLDownloadsViewController
@@ -291,14 +430,36 @@ static NSString *YTLDurationText(NSInteger seconds) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = LOC(@"MyDownloads");
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(done)];
-    self.tableView.rowHeight = 78;
+    self.compressing = [NSMutableDictionary dictionary];
+    self.tableView.rowHeight = 84;
+    self.tableView.allowsMultipleSelectionDuringEditing = YES;
+    [self updateBars];
     [self reload];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     [self reload];
+}
+
+- (void)updateBars {
+    if (self.tableView.isEditing) {
+        self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:LOC(@"SelectAll") style:UIBarButtonItemStylePlain target:self action:@selector(selectAll)];
+        self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(endSelection)];
+        NSUInteger count = self.tableView.indexPathsForSelectedRows.count;
+        UIBarButtonItem *compress = [[UIBarButtonItem alloc] initWithTitle:[NSString stringWithFormat:@"%@ (%lu)", LOC(@"Compress"), (unsigned long)count] style:UIBarButtonItemStylePlain target:self action:@selector(compressSelected)];
+        UIBarButtonItem *remove = [[UIBarButtonItem alloc] initWithTitle:[NSString stringWithFormat:@"%@ (%lu)", LOC(@"Delete"), (unsigned long)count] style:UIBarButtonItemStylePlain target:self action:@selector(deleteSelected)];
+        remove.tintColor = [UIColor systemRedColor];
+        compress.enabled = remove.enabled = count > 0;
+        UIBarButtonItem *flex = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+        self.toolbarItems = @[compress, flex, remove];
+        [self.navigationController setToolbarHidden:NO animated:YES];
+    } else {
+        self.navigationItem.leftBarButtonItem = nil;
+        self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(done)];
+        self.toolbarItems = nil;
+        [self.navigationController setToolbarHidden:YES animated:YES];
+    }
 }
 
 - (void)reload {
@@ -313,10 +474,121 @@ static NSString *YTLDurationText(NSInteger seconds) {
     }
     self.tableView.backgroundView = empty;
     [self.tableView reloadData];
+    if (self.tableView.isEditing && self.items.count == 0) [self endSelection];
 }
 
 - (void)done {
     [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)beginSelectionWithItem:(NSIndexPath *)indexPath {
+    [self.tableView setEditing:YES animated:YES];
+    if (indexPath && indexPath.row < (NSInteger)self.items.count) [self.tableView selectRowAtIndexPath:indexPath animated:NO scrollPosition:UITableViewScrollPositionNone];
+    [self updateBars];
+}
+
+- (void)endSelection {
+    [self.tableView setEditing:NO animated:YES];
+    [self updateBars];
+}
+
+- (void)selectAll {
+    for (NSInteger i = 0; i < (NSInteger)self.items.count; i++) [self.tableView selectRowAtIndexPath:[NSIndexPath indexPathForRow:i inSection:0] animated:NO scrollPosition:UITableViewScrollPositionNone];
+    [self updateBars];
+}
+
+- (NSArray <NSDictionary *> *)selectedItems {
+    NSMutableArray *selected = [NSMutableArray array];
+    for (NSIndexPath *indexPath in self.tableView.indexPathsForSelectedRows) {
+        if (indexPath.row < (NSInteger)self.items.count) [selected addObject:self.items[indexPath.row]];
+    }
+    return selected;
+}
+
+- (void)deleteSelected {
+    for (NSDictionary *item in [self selectedItems]) [self removeFiles:item];
+    [self endSelection];
+    [self reload];
+}
+
+- (void)compressSelected {
+    NSArray <NSDictionary *> *selected = [self selectedItems];
+    [self endSelection];
+    for (NSDictionary *item in selected) [self compressItem:item];
+}
+
+- (void)compressItem:(NSDictionary *)item {
+    NSString *key = [item[@"mediaURL"] lastPathComponent];
+    if ([item[@"audioOnly"] boolValue] || [item[@"compressed"] boolValue] || self.compressing[key]) return;
+    self.compressing[key] = @0;
+    [self.tableView reloadData];
+
+    NSURL *input = item[@"mediaURL"];
+    NSURL *temp = [[input URLByDeletingPathExtension] URLByAppendingPathExtension:@"compressing.mp4"];
+    __block UIBackgroundTaskIdentifier task = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
+        [[UIApplication sharedApplication] endBackgroundTask:task];
+        task = UIBackgroundTaskInvalid;
+    }];
+    __weak YTLDownloadsViewController *weakSelf = self;
+    YTLCompressVideo(input, temp, ^(float value) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            YTLDownloadsViewController *strongSelf = weakSelf;
+            NSInteger percent = (NSInteger)(value * 100);
+            if (!strongSelf || [strongSelf.compressing[key] integerValue] == percent) return;
+            strongSelf.compressing[key] = @(percent);
+            [strongSelf refreshRowForKey:key];
+        });
+    }, ^(NSError *error) {
+        NSFileManager *fm = [NSFileManager defaultManager];
+        long long before = [[fm attributesOfItemAtPath:input.path error:nil][NSFileSize] longLongValue];
+        long long after = [[fm attributesOfItemAtPath:temp.path error:nil][NSFileSize] longLongValue];
+        BOOL useful = !error && after > 0 && after < before;
+        if (useful) {
+            [fm removeItemAtURL:input error:nil];
+            [fm moveItemAtURL:temp toURL:input error:nil];
+            NSMutableDictionary *meta = [[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:item[@"metaURL"]] ?: [NSData data] options:0 error:nil] mutableCopy] ?: [NSMutableDictionary dictionary];
+            meta[@"compressed"] = @YES;
+            meta[@"originalSize"] = @(before);
+            [[NSJSONSerialization dataWithJSONObject:meta options:0 error:nil] writeToURL:item[@"metaURL"] atomically:YES];
+        } else {
+            [fm removeItemAtURL:temp error:nil];
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            YTLDownloadsViewController *strongSelf = weakSelf;
+            [strongSelf.compressing removeObjectForKey:key];
+            [strongSelf reload];
+            NSString *message = useful ? [NSString stringWithFormat:LOC(@"CompressDone"), [NSByteCountFormatter stringFromByteCount:before - after countStyle:NSByteCountFormatterCountStyleFile]] : LOC(error ? @"CompressFailed" : @"CompressUseless");
+            UIViewController *responder = strongSelf.navigationController.presentingViewController;
+            if (responder) [[YTLClass(@"YTToastResponderEvent") eventWithMessage:message firstResponder:responder] send];
+            if (task != UIBackgroundTaskInvalid) {
+                [[UIApplication sharedApplication] endBackgroundTask:task];
+                task = UIBackgroundTaskInvalid;
+            }
+        });
+    });
+}
+
+- (void)refreshRowForKey:(NSString *)key {
+    for (NSInteger i = 0; i < (NSInteger)self.items.count; i++) {
+        if ([[self.items[i][@"mediaURL"] lastPathComponent] isEqualToString:key]) {
+            UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:i inSection:0]];
+            if (cell) cell.detailTextLabel.text = [self detailForItem:self.items[i]];
+        }
+    }
+}
+
+- (NSString *)detailForItem:(NSDictionary *)item {
+    NSString *key = [item[@"mediaURL"] lastPathComponent];
+    if (self.compressing[key]) return [NSString stringWithFormat:LOC(@"Compressing"), (long)[self.compressing[key] integerValue]];
+    NSMutableArray *parts = [NSMutableArray array];
+    if ([item[@"channel"] length]) [parts addObject:item[@"channel"]];
+    NSString *duration = YTLDurationText([item[@"duration"] integerValue]);
+    if (duration.length) [parts addObject:duration];
+    NSNumber *size = [[NSFileManager defaultManager] attributesOfItemAtPath:[item[@"mediaURL"] path] error:nil][NSFileSize];
+    if (size) [parts addObject:[NSByteCountFormatter stringFromByteCount:size.longLongValue countStyle:NSByteCountFormatterCountStyleFile]];
+    if ([item[@"compressed"] boolValue]) [parts addObject:LOC(@"Compressed")];
+    if ([item[@"audioOnly"] boolValue]) [parts addObject:@"M4A"];
+    return [parts componentsJoinedByString:@" · "];
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
@@ -329,53 +601,90 @@ static NSString *YTLDurationText(NSInteger seconds) {
     cell.textLabel.text = item[@"title"];
     cell.textLabel.numberOfLines = 2;
     cell.textLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
-    NSMutableArray *parts = [NSMutableArray array];
-    if ([item[@"channel"] length]) [parts addObject:item[@"channel"]];
-    NSString *duration = YTLDurationText([item[@"duration"] integerValue]);
-    if (duration.length) [parts addObject:duration];
-    NSNumber *size = [[NSFileManager defaultManager] attributesOfItemAtPath:[item[@"mediaURL"] path] error:nil][NSFileSize];
-    if (size) [parts addObject:[NSByteCountFormatter stringFromByteCount:size.longLongValue countStyle:NSByteCountFormatterCountStyleFile]];
-    if ([item[@"audioOnly"] boolValue]) [parts addObject:@"M4A"];
-    cell.detailTextLabel.text = [parts componentsJoinedByString:@" · "];
-    cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+    cell.detailTextLabel.text = [self detailForItem:item];
+    cell.detailTextLabel.textColor = [item[@"compressed"] boolValue] ? [UIColor systemGreenColor] : [UIColor secondaryLabelColor];
     UIImage *thumb = item[@"thumbURL"] ? [UIImage imageWithContentsOfFile:[item[@"thumbURL"] path]] : nil;
-    CGSize size2 = CGSizeMake(96, 54);
-    cell.imageView.image = [[[UIGraphicsImageRenderer alloc] initWithSize:size2] imageWithActions:^(UIGraphicsImageRendererContext *context) {
-        [[UIBezierPath bezierPathWithRoundedRect:(CGRect){CGPointZero, size2} cornerRadius:8] addClip];
+    CGSize box = CGSizeMake(104, 58);
+    cell.imageView.image = [[[UIGraphicsImageRenderer alloc] initWithSize:box] imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [[UIBezierPath bezierPathWithRoundedRect:(CGRect){CGPointZero, box} cornerRadius:8] addClip];
         [[UIColor tertiarySystemFillColor] setFill];
-        UIRectFill((CGRect){CGPointZero, size2});
+        UIRectFill((CGRect){CGPointZero, box});
         if (thumb) {
-            CGFloat scale = MAX(size2.width / thumb.size.width, size2.height / thumb.size.height);
+            CGFloat scale = MAX(box.width / thumb.size.width, box.height / thumb.size.height);
             CGSize drawn = CGSizeMake(thumb.size.width * scale, thumb.size.height * scale);
-            [thumb drawInRect:CGRectMake((size2.width - drawn.width) / 2, (size2.height - drawn.height) / 2, drawn.width, drawn.height)];
+            [thumb drawInRect:CGRectMake((box.width - drawn.width) / 2, (box.height - drawn.height) / 2, drawn.width, drawn.height)];
         }
     }];
     return cell;
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (tableView.isEditing) {
+        [self updateBars];
+        return;
+    }
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     NSDictionary *item = self.items[indexPath.row];
+    if (self.compressing[[item[@"mediaURL"] lastPathComponent]]) return;
     AVPlayerViewController *playerController = [AVPlayerViewController new];
     playerController.player = [AVPlayer playerWithURL:item[@"mediaURL"]];
     [self presentViewController:playerController animated:YES completion:^{ [playerController.player play]; }];
 }
 
+- (void)tableView:(UITableView *)tableView didDeselectRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (tableView.isEditing) [self updateBars];
+}
+
+- (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (tableView.isEditing) return nil;
+    NSDictionary *item = self.items[indexPath.row];
+    __weak YTLDownloadsViewController *weakSelf = self;
+    UIContextualAction *remove = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive title:LOC(@"Delete") handler:^(UIContextualAction *action, UIView *view, void (^completion)(BOOL)) {
+        [weakSelf removeFiles:item];
+        [weakSelf reload];
+        completion(YES);
+    }];
+    remove.image = [UIImage systemImageNamed:@"trash"];
+    UIContextualAction *select = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleNormal title:LOC(@"Select") handler:^(UIContextualAction *action, UIView *view, void (^completion)(BOOL)) {
+        completion(YES);
+        dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf beginSelectionWithItem:indexPath]; });
+    }];
+    select.image = [UIImage systemImageNamed:@"checkmark.circle"];
+    select.backgroundColor = [UIColor systemBlueColor];
+    UISwipeActionsConfiguration *configuration = [UISwipeActionsConfiguration configurationWithActions:@[remove, select]];
+    configuration.performsFirstActionWithFullSwipe = NO;
+    return configuration;
+}
+
+- (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
+    return [UISwipeActionsConfiguration configurationWithActions:@[]];
+}
+
 - (UIContextMenuConfiguration *)tableView:(UITableView *)tableView contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath point:(CGPoint)point {
+    if (tableView.isEditing) return nil;
     NSDictionary *item = self.items[indexPath.row];
     __weak YTLDownloadsViewController *weakSelf = self;
     return [UIContextMenuConfiguration configurationWithIdentifier:nil previewProvider:nil actionProvider:^UIMenu *(NSArray <UIMenuElement *> *suggested) {
         NSMutableArray *actions = [NSMutableArray array];
         if (![item[@"audioOnly"] boolValue]) {
             [actions addObject:[UIAction actionWithTitle:LOC(@"SaveToPhotos") image:[UIImage systemImageNamed:@"photo.on.rectangle"] identifier:nil handler:^(UIAction *action) {
-                YTLSaveToPhotos(item[@"mediaURL"], weakSelf);
+                YTLSaveToPhotos(item[@"mediaURL"], weakSelf.navigationController.presentingViewController ?: weakSelf);
             }]];
+            if (![item[@"compressed"] boolValue]) {
+                [actions addObject:[UIAction actionWithTitle:LOC(@"Compress") image:[UIImage systemImageNamed:@"arrow.down.right.and.arrow.up.left"] identifier:nil handler:^(UIAction *action) {
+                    [weakSelf compressItem:item];
+                }]];
+            }
         }
         [actions addObject:[UIAction actionWithTitle:LOC(@"Share") image:[UIImage systemImageNamed:@"square.and.arrow.up"] identifier:nil handler:^(UIAction *action) {
             YTLShareCopy(item[@"mediaURL"], weakSelf, [tableView cellForRowAtIndexPath:indexPath]);
         }]];
+        [actions addObject:[UIAction actionWithTitle:LOC(@"Select") image:[UIImage systemImageNamed:@"checkmark.circle"] identifier:nil handler:^(UIAction *action) {
+            [weakSelf beginSelectionWithItem:indexPath];
+        }]];
         UIAction *remove = [UIAction actionWithTitle:LOC(@"Delete") image:[UIImage systemImageNamed:@"trash"] identifier:nil handler:^(UIAction *action) {
-            [weakSelf deleteItem:item];
+            [weakSelf removeFiles:item];
+            [weakSelf reload];
         }];
         remove.attributes = UIMenuElementAttributesDestructive;
         [actions addObject:remove];
@@ -383,21 +692,10 @@ static NSString *YTLDurationText(NSInteger seconds) {
     }];
 }
 
-- (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
-    NSDictionary *item = self.items[indexPath.row];
-    __weak YTLDownloadsViewController *weakSelf = self;
-    UIContextualAction *remove = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive title:LOC(@"Delete") handler:^(UIContextualAction *action, UIView *view, void (^completion)(BOOL)) {
-        [weakSelf deleteItem:item];
-        completion(YES);
-    }];
-    return [UISwipeActionsConfiguration configurationWithActions:@[remove]];
-}
-
-- (void)deleteItem:(NSDictionary *)item {
+- (void)removeFiles:(NSDictionary *)item {
     for (NSString *key in @[@"mediaURL", @"metaURL", @"thumbURL"]) {
         if (item[key]) [[NSFileManager defaultManager] removeItemAtURL:item[key] error:nil];
     }
-    [self reload];
 }
 
 @end
@@ -711,6 +1009,42 @@ static void YTLTrackPlayer(YTPlayerViewController *player) {
 - (void)ytl_didTapDownload:(UIButton *)sender {
     UIViewController *presenter = [YTLClass(@"YTUIUtils") topViewControllerForPresenting];
     YTLPresentDownloadMenu(presenter);
+}
+%end
+
+static BOOL YTLHandleNativeDownload(id command) {
+    if (!ytlBool(@"downloadButton")) return NO;
+    NSString *videoID = nil;
+    @try {
+        id endpoint = YTLValue(command, @"offlineVideoEndpoint");
+        videoID = YTLStringValue(endpoint, @"videoId");
+    } @catch (NSException *exception) {}
+
+    UIViewController *presenter = [YTLClass(@"YTUIUtils") topViewControllerForPresenting];
+    YTPlayerViewController *player = YTLDownloadTarget();
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (videoID.length && player && ![player.contentVideoID isEqualToString:videoID]) {
+            [[YTLClass(@"YTToastResponderEvent") eventWithMessage:LOC(@"OpenVideoToDownload") firstResponder:presenter] send];
+            return;
+        }
+        YTLPresentDownloadMenu(presenter);
+    });
+    return YES;
+}
+
+%hook YTOfflineVideoEndpointCommandHandlerImpl
+- (void)executeWithCommand:(id)command entry:(id)entry fromView:(id)view sender:(id)sender completionBlock:(id)completion {
+    if (!YTLHandleNativeDownload(command)) %orig;
+}
+
+- (void)executeWithCommand:(id)command entry:(id)entry fromView:(id)view sender:(id)sender {
+    if (!YTLHandleNativeDownload(command)) %orig;
+}
+%end
+
+%hook YTYPCGetOfflineUpsellEndpointCommandHandlerImpl
+- (void)executeWithCommand:(id)command entry:(id)entry fromView:(id)view sender:(id)sender {
+    if (!YTLHandleNativeDownload(command)) %orig;
 }
 %end
 
