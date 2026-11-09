@@ -206,3 +206,12 @@
 "DownloadSaved" = "Download saved in My downloads";
 "HidePremiumPromo" = "Hide YouTube Premium offers";
 "HidePremiumPromoDesc" = "Removes the buttons and items asking to subscribe to YouTube Premium";
+"Select" = "Select";
+"SelectAll" = "Select all";
+"Compress" = "Compress";
+"Compressed" = "Compressed";
+"Compressing" = "Compressing %ld %%";
+"CompressDone" = "Compressed: %@ saved";
+"CompressFailed" = "Compression failed";
+"CompressUseless" = "Already as small as possible, kept as is";
+"OpenVideoToDownload" = "Open the video to download it";
