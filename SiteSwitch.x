@@ -502,6 +502,8 @@ static NSString *const kYTLMovixScript = @"(function(){"
 @property (nonatomic, strong) WKWebView *webView;
 @property (nonatomic, strong) UIButton *backButton;
 @property (nonatomic, strong) NSURL *siteURL;
+@property (nonatomic, assign) CFTimeInterval trustedLoadUntil;
+@property (nonatomic, strong) NSMutableSet <NSString *> *trustedRoots;
 @property (nonatomic, assign) BOOL mediaFullscreen;
 @property (nonatomic, assign) BOOL mediaPiP;
 + (instancetype)shared;
@@ -694,8 +696,11 @@ static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hos
 - (void)showSite:(NSURL *)url {
     [self loadViewIfNeeded];
     if (!url) return;
-    if (![self.siteURL.host isEqualToString:url.host] || !self.webView.URL) {
+    BOOL sameSite = url.host && [YTLRootDomain(url.host) isEqualToString:YTLRootDomain(self.webView.URL.host ?: @"")];
+    if (!sameSite || !self.webView.URL) {
         self.siteURL = url;
+        self.trustedLoadUntil = CACurrentMediaTime() + 15;
+        [self.webView stopLoading];
         [self.webView loadRequest:[NSURLRequest requestWithURL:url]];
     }
 }
@@ -792,6 +797,7 @@ static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hos
 }
 
 - (void)webView:(WKWebView *)webView didCommitNavigation:(WKNavigation *)navigation {
+    if (self.trustedLoadUntil > 0) self.trustedLoadUntil = MIN(self.trustedLoadUntil, CACurrentMediaTime() + 3);
     if (webView.URL.host) [siteVisitedHosts addObject:YTLBareHost(webView.URL.host)];
 }
 
@@ -834,6 +840,7 @@ static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hos
 
 - (BOOL)isUserSiteHost:(NSString *)host {
     NSString *root = YTLRootDomain(host);
+    if ([self.trustedRoots containsObject:root]) return YES;
     if ([root isEqualToString:YTLRootDomain(self.webView.URL.host ?: self.siteURL.host)]) return YES;
     for (NSString *entry in YTLSiteList()) {
         NSString *siteHost = YTLNormalizeSite(entry).host;
@@ -855,6 +862,12 @@ static BOOL YTLShouldPersistCookie(NSHTTPCookie *cookie, NSSet <NSString *> *hos
     }
     BOOL mainFrame = navigationAction.targetFrame.isMainFrame;
     BOOL userClick = navigationAction.navigationType == WKNavigationTypeLinkActivated || navigationAction.navigationType == WKNavigationTypeFormSubmitted || navigationAction.navigationType == WKNavigationTypeBackForward || navigationAction.navigationType == WKNavigationTypeReload;
+    if (mainFrame && CACurrentMediaTime() < self.trustedLoadUntil) {
+        if (!self.trustedRoots) self.trustedRoots = [NSMutableSet set];
+        [self.trustedRoots addObject:YTLRootDomain(host)];
+        decisionHandler(WKNavigationActionPolicyAllow);
+        return;
+    }
     if (mainFrame && !userClick && webView.URL.host && ![self isUserSiteHost:host] && !YTLIsAuthHost(host) && [self isUserSiteHost:webView.URL.host]) {
         decisionHandler(WKNavigationActionPolicyCancel);
         return;
